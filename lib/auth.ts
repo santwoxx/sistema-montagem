@@ -4,12 +4,9 @@ import { cookies } from "next/headers";
 import bcrypt from "bcryptjs";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { COOKIE_NAME, SESSION_SECRET_BYTES as secret } from "@/lib/session-secret";
 
-export const COOKIE_NAME = "sessao";
-
-const secret = new TextEncoder().encode(
-  process.env.SESSION_SECRET ?? "chave-de-desenvolvimento-insegura-troque-isso"
-);
+export { COOKIE_NAME };
 
 export type Papel = "ADMIN" | "MONTADOR";
 

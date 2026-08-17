@@ -1,11 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
-
-const COOKIE_NAME = "sessao";
-const secret = new TextEncoder().encode(
-  process.env.SESSION_SECRET ?? "chave-de-desenvolvimento-insegura-troque-isso"
-);
+import { COOKIE_NAME, SESSION_SECRET_BYTES as secret } from "@/lib/session-secret";
 
 async function lerSessao(req: NextRequest) {
   const token = req.cookies.get(COOKIE_NAME)?.value;

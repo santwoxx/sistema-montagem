@@ -25,12 +25,16 @@ export default async function MontagensPage({
   if (lojaId) where.lojaId = lojaId;
   if (montadorId) where.montadorId = montadorId === "nenhum" ? null : montadorId;
 
-  const montagens = await prisma.montagem.findMany({
-    where,
-    orderBy: { createdAt: "desc" },
-    include: { loja: true, montador: true, _count: { select: { ocorrencias: true } } },
-    take: 100,
-  });
+  const LIMITE = 100;
+  const [montagens, totalMontagens] = await Promise.all([
+    prisma.montagem.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      include: { loja: true, montador: true, _count: { select: { ocorrencias: true } } },
+      take: LIMITE,
+    }),
+    prisma.montagem.count({ where }),
+  ]);
 
   return (
     <div>
@@ -87,6 +91,11 @@ export default async function MontagensPage({
         <Vazio>Nenhuma montagem encontrada com esses filtros.</Vazio>
       ) : (
         <div className="space-y-3">
+          {totalMontagens > LIMITE ? (
+            <p className="text-sm text-amber-700">
+              Mostrando as {LIMITE} mais recentes de {totalMontagens} montagens. Use os filtros acima para encontrar as demais.
+            </p>
+          ) : null}
           {montagens.map((m) => (
             <Link key={m.id} href={`/admin/montagens/${m.id}`}>
               <Card className="transition-shadow hover:shadow-md">
