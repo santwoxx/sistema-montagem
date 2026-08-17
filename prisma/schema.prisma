@@ -1,0 +1,223 @@
+// Schema do Sistema de Montagem de Móveis
+// Documentação: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  ADMIN
+  MONTADOR
+}
+
+enum StatusMontagem {
+  PENDENTE
+  EM_ANDAMENTO
+  CONCLUIDO
+  CANCELADO
+}
+
+enum TipoOcorrencia {
+  CLIENTE_AUSENTE
+  PECA_DANIFICADA
+  REAGENDAR
+  OUTRO
+}
+
+model User {
+  id        String   @id @default(cuid())
+  nome      String
+  email     String   @unique
+  telefone  String?
+  fotoUrl   String?
+  senha     String
+  role      Role     @default(MONTADOR)
+  ativo     Boolean  @default(true)
+  comissaoPadrao Float @default(0)
+  createdAt DateTime @default(now())
+
+  comissoes           ComissaoLoja[]
+  montagens           Montagem[]     @relation("MontadorMontagens")
+  avaliacoesRecebidas Avaliacao[]    @relation("AvaliacoesDoMontador")
+  notasPendentes      NotaPendente[] @relation("MontadorNotasPendentes")
+}
+
+model Loja {
+  id        String   @id @default(cuid())
+  nome      String
+  telefone  String?
+  endereco  String?
+  // CNPJ só com dígitos (sem pontuação). Preenchido manualmente ou pela
+  // importação automática de notas fiscais, usado para identificar a loja
+  // sem depender de bater o nome exatamente.
+  cnpj      String?  @unique
+  ativo     Boolean  @default(true)
+  createdAt DateTime @default(now())
+  // Percentual de assistência cobrado desta loja em toda montagem, além da
+  // comissão do montador (ComissaoLoja). Não depende de qual montador faz o
+  // serviço -- esse valor fica inteiro com a empresa, nunca com o montador.
+  // Usado pra pré-preencher "Assistência (%)" em Nova montagem assim que a
+  // loja é selecionada/resolvida.
+  percentualAssistencia Float @default(0)
+
+  comissoes ComissaoLoja[]
+  montagens Montagem[]
+}
+
+// Percentual de comissão de cada montador, por loja
+model ComissaoLoja {
+  id         String @id @default(cuid())
+  montadorId String
+  lojaId     String
+  percentual Float
+
+  montador User @relation(fields: [montadorId], references: [id], onDelete: Cascade)
+  loja     Loja @relation(fields: [lojaId], references: [id], onDelete: Cascade)
+
+  @@unique([montadorId, lojaId])
+}
+
+model Montagem {
+  id           String @id @default(cuid())
+  numeroPedido String?
+
+  lojaId     String
+  montadorId String?
+
+  clienteNome     String
+  clienteTelefone String?
+  clienteEndereco String
+
+  descricaoServico String
+  valorServico     Float
+  percentualMontador Float @default(0)
+  valorMontador      Float @default(0)
+  // percentualAssistencia + valorAssistencia seguem o mesmo padrão de
+  // percentualMontador + valorMontador acima: percentual gravado pra
+  // auditoria/edição, valor sempre recalculado no servidor a partir dele
+  // (ver criarMontagemAction/atualizarMontagemAction). Vem do
+  // Loja.percentualAssistencia no momento em que a montagem é criada.
+  percentualAssistencia Float @default(0)
+  valorAssistencia   Float @default(0)
+  feitoPorAdm        Boolean @default(false)
+
+  dataAgendada DateTime?
+  status       StatusMontagem @default(PENDENTE)
+
+  pagoPelaLoja     Boolean @default(false)
+  pagoAoMontador   Boolean @default(false)
+
+  observacoes String?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  concluidoEm DateTime?
+
+  // Comprovante de conclusão: foto do produto montado e assinaturas
+  fotoProdutoUrl      String?
+  assinaturaMontador  String? @db.Text
+  assinaturaCliente   String? @db.Text
+
+  // Manual/instrução que o admin envia ao designar o montador (imagem, PDF
+  // ou outro arquivo), pra ele consultar durante a montagem.
+  manualUrl         String?
+  manualNomeArquivo String?
+  manualTipo        String?
+
+  // Se essa montagem veio do CentralSync (numeroPedido no formato "del-..."),
+  // marca quando o admin confirmou o envio da conclusão de volta pra lá.
+  // O montador concluir aqui não avisa o CentralSync sozinho -- só quando um
+  // admin revisa e confirma, mesmo que quem tenha montado seja outro membro
+  // da equipe, não o dono da conta.
+  notificadoCentralSyncEm DateTime?
+
+  // Avaliação do cliente sobre o montador, pedida por WhatsApp após a conclusão
+  avaliacaoSolicitadaEm DateTime?
+
+  loja        Loja         @relation(fields: [lojaId], references: [id], onDelete: Restrict)
+  montador    User?        @relation("MontadorMontagens", fields: [montadorId], references: [id], onDelete: SetNull)
+  ocorrencias Ocorrencia[]
+  avaliacao   Avaliacao?
+
+  @@index([montadorId])
+  @@index([lojaId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([concluidoEm])
+  @@index([dataAgendada])
+}
+
+// Pedido recebido de um sistema externo (hoje, só o CentralSync) via API,
+// esperando revisão de um admin antes de virar uma Montagem de verdade.
+// Fica "solto" (sem loja/valor/comissão definidos) até alguém abrir "Nova
+// montagem", clicar em "Usar esta nota" e conferir os dados antes de salvar
+// — nada é lançado como Montagem paga automaticamente.
+model NotaPendente {
+  id           String @id @default(cuid())
+  numeroPedido String?
+
+  clienteNome     String
+  clienteTelefone String?
+  clienteEndereco String
+
+  descricaoServico String
+  valorServico     Float?
+  dataAgendada     DateTime?
+  observacoes      String?
+
+  // Loja emitente sugerida pelo CentralSync — resolvida/cadastrada (mesmo
+  // mecanismo da importação por OCR/XML) quando o admin clica em "Usar
+  // esta nota", pra não precisar escolher a loja manualmente toda vez.
+  lojaNomeSugerida  String?
+  lojaCnpjSugerido  String?
+
+  // Foto de referência do produto (não é o comprovante de conclusão) —
+  // vira o "manual/instrução" da montagem quando a nota é usada.
+  fotoReferenciaUrl String?
+
+  montadorSugeridoId String?
+  montadorSugerido   User? @relation("MontadorNotasPendentes", fields: [montadorSugeridoId], references: [id], onDelete: SetNull)
+
+  criadaEm DateTime @default(now())
+
+  @@index([montadorSugeridoId])
+}
+
+// Registro de visitas em que o montador não conseguiu concluir a
+// montagem (cliente ausente, peça com problema, pedido de remarcação etc).
+model Ocorrencia {
+  id         String         @id @default(cuid())
+  montagemId String
+  tipo       TipoOcorrencia
+  observacao String?
+  fotoUrl    String?
+  criadoEm   DateTime       @default(now())
+
+  montagem Montagem @relation(fields: [montagemId], references: [id], onDelete: Cascade)
+
+  @@index([montagemId])
+}
+
+// Avaliação que o cliente faz do montador após a conclusão do serviço,
+// enviada por um link único de WhatsApp. Uma avaliação por montagem.
+model Avaliacao {
+  id         String @id @default(cuid())
+  montagemId String @unique
+  montadorId String
+
+  estrelas   Int
+  comentario String?
+
+  criadoEm DateTime @default(now())
+
+  montagem Montagem @relation(fields: [montagemId], references: [id], onDelete: Cascade)
+  montador User     @relation("AvaliacoesDoMontador", fields: [montadorId], references: [id], onDelete: Cascade)
+
+  @@index([montadorId])
+}

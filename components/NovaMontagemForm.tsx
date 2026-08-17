@@ -1,0 +1,428 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { Card, Field, Input, Select, StatCard, Textarea } from "@/components/ui";
+import { SubmitButton } from "@/components/SubmitButton";
+import { ImportarNotaCard } from "@/components/ImportarNotaCard";
+import { NotasPendentesCard, type NotaPendenteResumo } from "@/components/NotasPendentesCard";
+import { resolverOuCriarLojaAction, type ResultadoResolucaoLoja } from "@/lib/actions/importar";
+import { formatarMoeda, paraInputDate, paraNumeroBr } from "@/lib/format";
+
+type Loja = { id: string; nome: string; percentualAssistencia?: number };
+type Montador = { id: string; nome: string; comissaoPadrao?: number };
+type Comissao = { montadorId: string; lojaId: string; percentual: number };
+
+export function NovaMontagemForm({
+  action,
+  lojas,
+  montadores,
+  comissoes,
+  notasPendentes,
+  valoresIniciais,
+  modoEdicao,
+}: {
+  action: (formData: FormData) => void;
+  lojas: Loja[];
+  montadores: Montador[];
+  comissoes: Comissao[];
+  notasPendentes?: NotaPendenteResumo[];
+  valoresIniciais?: {
+    lojaId?: string;
+    montadorId?: string;
+    clienteNome?: string;
+    clienteTelefone?: string;
+    clienteEndereco?: string;
+    numeroPedido?: string;
+    descricaoServico?: string;
+    valorServico?: string;
+    percentualAssistencia?: string;
+    percentualMontador?: string;
+    dataAgendada?: string;
+    observacoes?: string;
+    status?: string;
+    manualUrl?: string;
+    manualNomeArquivo?: string;
+  };
+  modoEdicao?: boolean;
+}) {
+  const [lojasDisponiveis, setLojasDisponiveis] = useState(lojas);
+  const [lojaId, setLojaId] = useState(valoresIniciais?.lojaId ?? "");
+  const [montadorId, setMontadorId] = useState(valoresIniciais?.montadorId ?? "");
+  const [valorServico, setValorServico] = useState(valoresIniciais?.valorServico ?? "");
+  const [percentual, setPercentual] = useState(valoresIniciais?.percentualMontador ?? "0");
+  const [percentualEditado, setPercentualEditado] = useState(false);
+  const [percentualAssistencia, setPercentualAssistencia] = useState(
+    valoresIniciais?.percentualAssistencia ?? "0"
+  );
+  const [percentualAssistenciaEditado, setPercentualAssistenciaEditado] = useState(false);
+
+  const [clienteNome, setClienteNome] = useState(valoresIniciais?.clienteNome ?? "");
+  const [clienteTelefone, setClienteTelefone] = useState(valoresIniciais?.clienteTelefone ?? "");
+  const [clienteEndereco, setClienteEndereco] = useState(valoresIniciais?.clienteEndereco ?? "");
+  const [numeroPedido, setNumeroPedido] = useState(valoresIniciais?.numeroPedido ?? "");
+  const [descricaoServico, setDescricaoServico] = useState(
+    valoresIniciais?.descricaoServico ?? ""
+  );
+  const [dataAgendada, setDataAgendada] = useState(valoresIniciais?.dataAgendada ?? "");
+  const [observacoes, setObservacoes] = useState(valoresIniciais?.observacoes ?? "");
+  const [notaPendenteId, setNotaPendenteId] = useState("");
+
+  // Compartilhado entre a importação por OCR/XML e as notas pendentes do
+  // CentralSync: seleciona a loja resolvida/recém-cadastrada e garante que
+  // ela apareça na lista mesmo que tenha acabado de ser criada agora.
+  function aplicarLojaResolvida(loja: ResultadoResolucaoLoja) {
+    setLojaId(loja.lojaId);
+    setLojasDisponiveis((atual) =>
+      atual.some((l) => l.id === loja.lojaId) ? atual : [...atual, { id: loja.lojaId, nome: loja.nome }]
+    );
+  }
+
+  async function usarNotaPendente(nota: NotaPendenteResumo) {
+    setClienteNome(nota.clienteNome);
+    setClienteTelefone(nota.clienteTelefone ?? "");
+    setClienteEndereco(nota.clienteEndereco);
+    setNumeroPedido(nota.numeroPedido ?? "");
+    setDescricaoServico(nota.descricaoServico);
+    setObservacoes(nota.observacoes ?? "");
+    setDataAgendada(paraInputDate(nota.dataAgendada));
+    if (nota.valorServico) {
+      setValorServico(nota.valorServico.toLocaleString("pt-BR", { minimumFractionDigits: 2 }));
+    }
+    setNotaPendenteId(nota.id);
+
+    // Resolve a loja ANTES de calcular a comissão do montador — senão a
+    // comissão é calculada com lojaId ainda vazio/antigo, ignora a tabela
+    // de comissão por loja (ComissaoLoja) e cai sempre no comissaoPadrao
+    // genérico do montador, mesmo quando existe uma taxa específica para
+    // essa loja.
+    let lojaResolvidaId = lojaId;
+    if (nota.lojaNomeSugerida) {
+      try {
+        const loja = await resolverOuCriarLojaAction(
+          nota.lojaNomeSugerida,
+          nota.lojaCnpjSugerido ?? undefined
+        );
+        if (loja) {
+          aplicarLojaResolvida(loja);
+          lojaResolvidaId = loja.lojaId;
+        }
+      } catch (e) {
+        console.error("Falha ao resolver/cadastrar loja da nota pendente:", e);
+        // Não trava o preenchimento: os outros campos já foram aplicados,
+        // o admin pode escolher a loja manualmente na lista.
+      }
+    }
+
+    // Assistência depende só da loja (não do montador), então é aplicada
+    // aqui direto, independente de a nota ter um montador sugerido ou não.
+    aplicarPercentualAssistencia(lojaResolvidaId);
+
+    if (nota.montadorSugeridoId) {
+      selecionarLojaOuMontador(lojaResolvidaId, nota.montadorSugeridoId);
+    }
+  }
+
+  // Todo pedido tem assistência, não só comissão do montador — esse
+  // percentual é fixo por loja (Loja.percentualAssistencia), não varia por
+  // montador, e é sempre recalculado no servidor a partir do valor do
+  // serviço (ver criarMontagemAction/atualizarMontagemAction).
+  function aplicarPercentualAssistencia(novoLojaId: string) {
+    if (percentualAssistenciaEditado) return;
+    const loja = lojasDisponiveis.find((l) => l.id === novoLojaId);
+    setPercentualAssistencia(String(loja?.percentualAssistencia ?? 0));
+  }
+
+  function selecionarLojaOuMontador(novoLojaId: string, novoMontadorId: string) {
+    setLojaId(novoLojaId);
+    setMontadorId(novoMontadorId);
+    aplicarPercentualAssistencia(novoLojaId);
+    if (!percentualEditado && novoMontadorId) {
+      if (novoMontadorId === "ADM") {
+        setPercentual("0");
+        return;
+      }
+      const encontrado = comissoes.find(
+        (c) => c.lojaId === novoLojaId && c.montadorId === novoMontadorId
+      );
+      const montador = montadores.find((m) => m.id === novoMontadorId);
+      const comissao = encontrado ? encontrado.percentual : (montador?.comissaoPadrao ?? 0);
+      setPercentual(String(comissao));
+    }
+  }
+
+  const valorServicoCalculado = useMemo(() => {
+    return paraNumeroBr(valorServico) || 0;
+  }, [valorServico]);
+
+  const valorMontadorCalculado = useMemo(() => {
+    const p = paraNumeroBr(percentual) || 0;
+    return (valorServicoCalculado * p) / 100;
+  }, [valorServicoCalculado, percentual]);
+
+  const valorAssistenciaCalculado = useMemo(() => {
+    const p = paraNumeroBr(percentualAssistencia) || 0;
+    return (valorServicoCalculado * p) / 100;
+  }, [valorServicoCalculado, percentualAssistencia]);
+
+  return (
+    <form action={action} className="space-y-6">
+      <input type="hidden" name="notaPendenteId" value={notaPendenteId} />
+
+      {!modoEdicao && notasPendentes && notasPendentes.length > 0 ? (
+        <NotasPendentesCard notas={notasPendentes} onUsar={usarNotaPendente} />
+      ) : null}
+
+      {!modoEdicao ? (
+        <Card className="bg-slate-50">
+          <h2 className="mb-1 text-base font-semibold text-slate-900">
+            Importar nota (opcional)
+          </h2>
+          <p className="mb-3 text-sm text-slate-500">
+            Envie o XML da nota fiscal eletrônica, ou uma foto/imagem da nota
+            impressa (DANFE), para preencher o formulário automaticamente. Se
+            a loja da nota ainda não estiver cadastrada, o sistema cadastra
+            ela sozinho. Depois é só completar o que faltar e conferir os
+            dados antes de salvar.
+          </p>
+          <ImportarNotaCard
+            onDados={(resultado) => {
+              if (resultado.clienteNome) setClienteNome(resultado.clienteNome);
+              if (resultado.clienteTelefone) setClienteTelefone(resultado.clienteTelefone);
+              if (resultado.clienteEndereco) setClienteEndereco(resultado.clienteEndereco);
+              if (resultado.numeroPedido) setNumeroPedido(resultado.numeroPedido);
+              if (resultado.descricaoServico) setDescricaoServico(resultado.descricaoServico);
+              if (resultado.valorServico) setValorServico(resultado.valorServico);
+            }}
+            onLojaResolvida={aplicarLojaResolvida}
+          />
+        </Card>
+      ) : null}
+
+      <div>
+        <h2 className="mb-4 text-base font-semibold text-gray-900">
+          Loja e montador
+        </h2>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Loja">
+            <Select
+              name="lojaId"
+              required
+              value={lojaId}
+              onChange={(e) => selecionarLojaOuMontador(e.target.value, montadorId)}
+            >
+              <option value="">Selecione a loja</option>
+              {lojasDisponiveis.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.nome}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Montador" hint="Você pode deixar em branco e atribuir depois.">
+            <Select
+              name="montadorId"
+              value={montadorId}
+              onChange={(e) => selecionarLojaOuMontador(lojaId, e.target.value)}
+            >
+              <option value="">A definir</option>
+              <option value="ADM">A própria empresa (ADM)</option>
+              {montadores.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.nome}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+        <div className="mt-4">
+          <Field
+            label="Manual / instrução para o montador (opcional)"
+            hint="Imagem, PDF ou outro arquivo — o montador vê isso na tela da montagem."
+          >
+            <input
+              type="file"
+              name="manual"
+              className="w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-gold file:px-4 file:py-2 file:text-sm file:font-medium file:text-navy hover:file:bg-gold-hover"
+            />
+          </Field>
+          {valoresIniciais?.manualUrl ? (
+            <p className="mt-2 text-sm text-slate-500">
+              Arquivo atual:{" "}
+              <a
+                href={valoresIniciais.manualUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="font-medium text-blue-600 hover:underline"
+              >
+                {valoresIniciais.manualNomeArquivo || "ver arquivo"}
+              </a>
+              . Enviar um novo arquivo substitui o atual.
+            </p>
+          ) : null}
+        </div>
+      </div>
+
+      <div>
+        <h2 className="mb-4 text-base font-semibold text-gray-900">
+          Dados do cliente
+        </h2>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Nome do cliente">
+            <Input
+              name="clienteNome"
+              required
+              value={clienteNome}
+              onChange={(e) => setClienteNome(e.target.value)}
+              placeholder="Ex: Maria Souza"
+            />
+          </Field>
+          <Field label="Telefone do cliente">
+            <Input
+              name="clienteTelefone"
+              value={clienteTelefone}
+              onChange={(e) => setClienteTelefone(e.target.value)}
+              placeholder="(11) 91234-5678"
+            />
+          </Field>
+          <div className="sm:col-span-2">
+            <Field label="Endereço completo">
+              <Input
+                name="clienteEndereco"
+                required
+                value={clienteEndereco}
+                onChange={(e) => setClienteEndereco(e.target.value)}
+                placeholder="Rua, número, bairro, cidade"
+              />
+            </Field>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <h2 className="mb-4 text-base font-semibold text-gray-900">
+          Serviço e valores
+        </h2>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Nº do pedido (opcional)">
+            <Input
+              name="numeroPedido"
+              value={numeroPedido}
+              onChange={(e) => setNumeroPedido(e.target.value)}
+              placeholder="Ex: 12345"
+            />
+          </Field>
+          <Field label="Data agendada (opcional)">
+            <Input
+              type="date"
+              name="dataAgendada"
+              value={dataAgendada}
+              onChange={(e) => setDataAgendada(e.target.value)}
+            />
+          </Field>
+          <div className="sm:col-span-2">
+            <Field label="Descrição do serviço">
+              <Textarea
+                name="descricaoServico"
+                required
+                rows={2}
+                value={descricaoServico}
+                onChange={(e) => setDescricaoServico(e.target.value)}
+                placeholder="Ex: Montagem de guarda-roupa 6 portas + cômoda"
+              />
+            </Field>
+          </div>
+          <Field label="Valor total do serviço (R$)">
+            <Input
+              type="text"
+              inputMode="decimal"
+              name="valorServico"
+              required
+              value={valorServico}
+              onChange={(e) => setValorServico(e.target.value)}
+              placeholder="Ex: 250,00"
+            />
+          </Field>
+          <Field
+            label="Comissão do montador (%)"
+            hint="Preenchido automaticamente conforme a loja e o montador escolhidos. Pode ajustar."
+          >
+            <Input
+              type="text"
+              inputMode="decimal"
+              name="percentualMontador"
+              value={percentual}
+              onChange={(e) => {
+                setPercentual(e.target.value);
+                setPercentualEditado(true);
+              }}
+              disabled={montadorId === "ADM"}
+            />
+          </Field>
+          <Field
+            label="Assistência (%)"
+            hint="Preenchido automaticamente conforme a loja escolhida (cadastro da loja). Pode ajustar."
+          >
+            <Input
+              type="text"
+              inputMode="decimal"
+              name="percentualAssistencia"
+              value={percentualAssistencia}
+              onChange={(e) => {
+                setPercentualAssistencia(e.target.value);
+                setPercentualAssistenciaEditado(true);
+              }}
+            />
+          </Field>
+        </div>
+        <div className="mt-4 grid gap-4 sm:grid-cols-3">
+          <StatCard
+            titulo="Valor a receber (desta nota)"
+            valor={formatarMoeda(valorServicoCalculado)}
+            sub="O que a loja deve pela montagem"
+            cor="text-emerald-600"
+            icone="🏬"
+          />
+          <StatCard
+            titulo="Valor estimado para o montador"
+            valor={formatarMoeda(valorMontadorCalculado)}
+            sub={`Comissão de ${percentual || 0}%`}
+            icone="👷"
+          />
+          <StatCard
+            titulo="Assistência (fica com a empresa)"
+            valor={formatarMoeda(valorAssistenciaCalculado)}
+            sub={`Assistência de ${percentualAssistencia || 0}%`}
+            icone="🛠️"
+          />
+        </div>
+      </div>
+
+      {valoresIniciais?.status !== undefined ? (
+        <div>
+          <Field label="Status">
+            <Select name="status" defaultValue={valoresIniciais.status || "PENDENTE"}>
+              <option value="PENDENTE">Pendente</option>
+              <option value="EM_ANDAMENTO">Em andamento</option>
+              <option value="CONCLUIDO">Concluído</option>
+              <option value="CANCELADO">Cancelado</option>
+            </Select>
+          </Field>
+        </div>
+      ) : null}
+
+      <div>
+        <Field label="Observações (opcional)">
+          <Textarea
+            name="observacoes"
+            rows={2}
+            value={observacoes}
+            onChange={(e) => setObservacoes(e.target.value)}
+            placeholder="Detalhes adicionais para o montador"
+          />
+        </Field>
+      </div>
+
+      <SubmitButton pendingText="Salvando…">Salvar montagem</SubmitButton>
+    </form>
+  );
+}

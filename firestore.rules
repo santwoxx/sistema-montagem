@@ -1,0 +1,17 @@
+rules_version = '2';
+
+// Regras do Firestore para o login do administrador do MontaFácil.
+// A lista de e-mails autorizados fica direto AQUI, dentro da regra — para
+// autorizar mais alguém, edite a lista abaixo e publique de novo.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /adminEmails/{document=**} {
+      allow read: if request.auth != null &&
+        request.auth.token.email in [
+          'dario.montador1985@gmail.com',
+          'brisasofc@gmail.com'
+        ];
+      allow write: if false;
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "MontaFácil",
+  "short_name": "MontaFácil",
+  "description": "Organização financeira e de demandas para montadores de móveis",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b1a2a",
+  "theme_color": "#0b1a2a",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
