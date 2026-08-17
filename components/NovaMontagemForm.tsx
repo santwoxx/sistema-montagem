@@ -6,7 +6,14 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { ImportarNotaCard } from "@/components/ImportarNotaCard";
 import { NotasPendentesCard, type NotaPendenteResumo } from "@/components/NotasPendentesCard";
 import { resolverOuCriarLojaAction, type ResultadoResolucaoLoja } from "@/lib/actions/importar";
+import { pareceIdDoCentralSync } from "@/lib/centralsync";
 import { formatarMoeda, paraInputDate, paraNumeroBr } from "@/lib/format";
+
+// Comissão combinada à parte com o CentralSync — sempre 8% de montagem e 1%
+// de assistência nos pedidos vindos de lá, independente do que a loja ou a
+// tabela de comissão por montador (ComissaoLoja/comissaoPadrao) diriam.
+const COMISSAO_MONTADOR_CENTRALSYNC = "8";
+const COMISSAO_ASSISTENCIA_CENTRALSYNC = "1";
 
 type Loja = { id: string; nome: string; percentualAssistencia?: number };
 type Montador = { id: string; nome: string; comissaoPadrao?: number };
@@ -119,6 +126,15 @@ export function NovaMontagemForm({
 
     if (nota.montadorSugeridoId) {
       selecionarLojaOuMontador(lojaResolvidaId, nota.montadorSugeridoId);
+    }
+
+    // Pedido do CentralSync: sobrepõe o que veio da loja/tabela de comissão
+    // acima com a taxa fixa combinada (8% montagem + 1% assistência), a não
+    // ser que o admin já tenha ajustado esses campos manualmente antes de
+    // usar a nota.
+    if (pareceIdDoCentralSync(nota.numeroPedido)) {
+      if (!percentualEditado) setPercentual(COMISSAO_MONTADOR_CENTRALSYNC);
+      if (!percentualAssistenciaEditado) setPercentualAssistencia(COMISSAO_ASSISTENCIA_CENTRALSYNC);
     }
   }
 

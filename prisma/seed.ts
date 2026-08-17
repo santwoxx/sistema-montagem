@@ -33,9 +33,27 @@ async function main() {
     console.log("Troque essa senha após o primeiro acesso.");
   }
 
+  // 1.5 Loja padrão que recebe os avisos de ocorrência (problema na
+  // montagem) por WhatsApp quando a loja do pedido não tem telefone
+  // próprio cadastrado ainda. Sem CNPJ, então não dá pra usar upsert por
+  // esse campo -- busca por nome e só cria se ainda não existir, pra não
+  // sobrescrever um telefone que o admin já tenha ajustado manualmente.
+  const CENTRAL_MOVEIS_NOME = "Central Móveis";
+  const centralMoveis = await prisma.loja.findFirst({
+    where: { nome: CENTRAL_MOVEIS_NOME },
+  });
+  if (!centralMoveis) {
+    await prisma.loja.create({
+      data: { nome: CENTRAL_MOVEIS_NOME, telefone: "7399392585", ativo: true },
+    });
+    console.log(`Loja "${CENTRAL_MOVEIS_NOME}" cadastrada com o WhatsApp padrão.`);
+  } else {
+    console.log(`Loja "${CENTRAL_MOVEIS_NOME}" já cadastrada.`);
+  }
+
   // 2. Cadastro da Empresa (Loja) e Nota (Montagem)
   console.log("\nIniciando cadastro da empresa e da nota...");
-  
+
   const loja = await prisma.loja.upsert({
     where: { cnpj: '46112641000481' },
     update: {},

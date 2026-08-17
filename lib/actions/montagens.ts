@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { put } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getSession, requireAdmin } from "@/lib/auth";
-import { paraNumeroBr } from "@/lib/format";
+import { apenasDigitos, OCORRENCIA_LABEL, paraNumeroBr } from "@/lib/format";
 import { pareceIdDoCentralSync } from "@/lib/centralsync";
 
 function paraNumero(valor: FormDataEntryValue | null, padrao = 0) {
@@ -462,23 +462,35 @@ export async function confirmarEnvioCentralSyncAction(id: string) {
 
 const TIPOS_OCORRENCIA = ["CLIENTE_AUSENTE", "PECA_DANIFICADA", "REAGENDAR", "OUTRO"] as const;
 
-export async function registrarOcorrenciaAction(id: string, formData: FormData) {
+type ResultadoOcorrencia =
+  | { ok: true; url: string | null; aviso?: string }
+  | { ok: false; erro: string };
+
+// Registra a ocorrência (cliente ausente, peça danificada etc.) e devolve um
+// link do WhatsApp (wa.me) já com a mensagem pronta para a loja, avisando
+// qual pedido/cliente teve problema. Não dispara a mensagem sozinha -- por
+// não termos uma API oficial do WhatsApp Business configurada, quem manda
+// pra loja é o próprio montador, com um toque, a partir do link que abrimos
+// (mesmo mecanismo do pedido de avaliação em gerarLinkAvaliacaoAction).
+export async function registrarOcorrenciaAction(
+  id: string,
+  formData: FormData
+): Promise<ResultadoOcorrencia> {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const montagem = await prisma.montagem.findUnique({ where: { id } });
-  if (!montagem) redirect("/montador");
+  const montagem = await prisma.montagem.findUnique({
+    where: { id },
+    include: { loja: true },
+  });
+  if (!montagem) return { ok: false, erro: "Montagem não encontrada." };
   if (session.role !== "MONTADOR" || montagem.montadorId !== session.sub) {
-    redirect("/montador");
+    return { ok: false, erro: "Você não tem acesso a esta montagem." };
   }
-
-  const erro = (mensagem: string) =>
-    redirect(`/montador/montagens/${id}?erro=${encodeURIComponent(mensagem)}`);
 
   const tipoBruto = String(formData.get("tipo") || "");
   if (!TIPOS_OCORRENCIA.includes(tipoBruto as (typeof TIPOS_OCORRENCIA)[number])) {
-    erro("Selecione o que aconteceu na visita.");
-    return;
+    return { ok: false, erro: "Selecione o que aconteceu na visita." };
   }
   const tipo = tipoBruto as (typeof TIPOS_OCORRENCIA)[number];
   const observacao = String(formData.get("observacao") || "").trim();
@@ -487,12 +499,10 @@ export async function registrarOcorrenciaAction(id: string, formData: FormData) 
   const foto = formData.get("foto");
   if (foto instanceof File && foto.size > 0) {
     if (!foto.type.startsWith("image/")) {
-      erro("O arquivo da foto precisa ser uma imagem.");
-      return;
+      return { ok: false, erro: "O arquivo da foto precisa ser uma imagem." };
     }
     if (foto.size > 8 * 1024 * 1024) {
-      erro("A foto é muito grande (máximo 8 MB).");
-      return;
+      return { ok: false, erro: "A foto é muito grande (máximo 8 MB)." };
     }
     const extensao = foto.type.split("/")[1] || "jpg";
     const blob = await put(`ocorrencias/${id}-${Date.now()}.${extensao}`, foto, {
@@ -516,11 +526,36 @@ export async function registrarOcorrenciaAction(id: string, formData: FormData) 
   revalidatePath("/montador");
   revalidatePath(`/montador/montagens/${id}`);
   revalidatePath(`/admin/montagens/${id}`);
-  redirect(
-    `/montador/montagens/${id}?sucesso=${encodeURIComponent(
-      "Ocorrência registrada. O administrador vai ver isso no sistema."
-    )}`
-  );
+
+  const linhasMensagem = [
+    "🚨 *Problema na montagem*",
+    "",
+    `Loja: ${montagem.loja.nome}`,
+    `Cliente: ${montagem.clienteNome}`,
+    montagem.numeroPedido ? `Pedido: ${montagem.numeroPedido}` : null,
+    `Produto/serviço: ${montagem.descricaoServico}`,
+    `Endereço: ${montagem.clienteEndereco}`,
+    "",
+    `Problema: ${OCORRENCIA_LABEL[tipo]}`,
+    observacao ? `Detalhes: ${observacao}` : null,
+    fotoUrl ? `Foto: ${fotoUrl}` : null,
+  ].filter((linha): linha is string => linha !== null);
+  const mensagem = linhasMensagem.join("\n");
+
+  if (!montagem.loja.telefone) {
+    return {
+      ok: true,
+      url: null,
+      aviso:
+        "Ocorrência registrada. Cadastre o WhatsApp da loja (em Lojas) para avisar automaticamente da próxima vez.",
+    };
+  }
+
+  const digitos = apenasDigitos(montagem.loja.telefone);
+  const comCodigoPais = digitos.startsWith("55") ? digitos : `55${digitos}`;
+  const url = `https://wa.me/${comCodigoPais}?text=${encodeURIComponent(mensagem)}`;
+
+  return { ok: true, url };
 }
 
 export async function alternarPagamentoLojaAction(id: string) {

@@ -33,7 +33,10 @@ export default async function LojasPage({
           <Field label="Nome da loja">
             <Input name="nome" required placeholder="Ex: Móveis Rocha" />
           </Field>
-          <Field label="Telefone">
+          <Field
+            label="Telefone"
+            hint="WhatsApp que recebe os avisos quando um montador reporta um problema (peça danificada, cliente ausente etc.)."
+          >
             <Input name="telefone" placeholder="(11) 3333-4444" />
           </Field>
           <Field
@@ -104,7 +107,10 @@ export default async function LojasPage({
                   <Field label="Nome da loja">
                     <Input name="nome" defaultValue={loja.nome} required />
                   </Field>
-                  <Field label="Telefone">
+                  <Field
+                    label="Telefone"
+                    hint="WhatsApp que recebe os avisos quando um montador reporta um problema."
+                  >
                     <Input name="telefone" defaultValue={loja.telefone ?? ""} />
                   </Field>
                   <Field
