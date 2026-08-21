@@ -9,6 +9,8 @@ import {
   confirmarEnvioCentralSyncAction,
 } from "@/lib/actions/montagens";
 import { pareceIdDoCentralSync } from "@/lib/centralsync";
+import { linkMapa, linkWaze } from "@/lib/mapas";
+import { CopiarTexto } from "@/components/CopiarTexto";
 import { Alerta, Badge, Button, Card, PageHeader } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
 import { NovaMontagemForm } from "@/components/NovaMontagemForm";
@@ -18,6 +20,8 @@ import {
   formatarData,
   formatarDataHora,
   formatarMoeda,
+  linkTelefone,
+  linkWhatsapp,
   OCORRENCIA_COLOR,
   OCORRENCIA_LABEL,
   paraInputDate,
@@ -66,6 +70,54 @@ export default async function MontagemDetalhePage({
 
       {erro ? <Alerta tipo="erro">{erro}</Alerta> : null}
       {sucesso ? <Alerta tipo="sucesso">{sucesso}</Alerta> : null}
+
+      <Card className="mb-6">
+        <p className="text-sm font-medium text-gray-500">Endereço do cliente</p>
+        <p className="mt-1 text-gray-900">{montagem.clienteEndereco}</p>
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+          <a
+            href={linkMapa(montagem.clienteEndereco)}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline"
+          >
+            📍 Google Maps
+          </a>
+          <a
+            href={linkWaze(montagem.clienteEndereco)}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-sm font-medium text-sky-600 hover:underline"
+          >
+            🚗 Waze
+          </a>
+          <CopiarTexto texto={montagem.clienteEndereco} rotulo="Copiar endereço" />
+          {montagem.clienteTelefone ? (
+            <>
+              <a
+                href={linkTelefone(montagem.clienteTelefone)}
+                className="inline-flex items-center gap-1 text-sm font-medium text-slate-600 hover:underline"
+              >
+                📞 {montagem.clienteTelefone}
+              </a>
+              <a
+                href={linkWhatsapp(montagem.clienteTelefone)}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-sm font-medium text-emerald-600 hover:underline"
+              >
+                💬 WhatsApp
+              </a>
+            </>
+          ) : null}
+          <Link
+            href={`/admin/rota?data=${paraInputDate(montagem.dataAgendada)}`}
+            className="inline-flex items-center gap-1 text-sm font-medium text-navy hover:underline"
+          >
+            🗺️ Ver na rota do dia
+          </Link>
+        </div>
+      </Card>
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2">
         <Card>
@@ -162,25 +214,40 @@ export default async function MontagemDetalhePage({
         <Card className="mb-6 border-blue-100">
           <p className="text-sm font-medium text-slate-500">Integração CentralSync</p>
           {montagem.notificadoCentralSyncEm ? (
-            <p className="mt-2 text-sm text-emerald-700">
-              ✔ CentralSync avisado em {formatarDataHora(montagem.notificadoCentralSyncEm)}.
-            </p>
+            <>
+              <p className="mt-2 text-sm text-emerald-700">
+                ✔ Enviado ao CentralSync em{" "}
+                {formatarDataHora(montagem.notificadoCentralSyncEm)}.
+              </p>
+              <p className="mt-1 mb-3 text-sm text-slate-500">
+                A conclusão está esperando revisão na aba Entregas do CentralSync
+                (caixa &ldquo;Montagens Feitas&rdquo;). Se lá não aparecer, reenvie.
+              </p>
+              <form action={confirmarEnvioCentralSyncAction.bind(null, montagem.id, "montagem")}>
+                <SubmitButton pendingText="Reenviando…">Reenviar ao CentralSync</SubmitButton>
+              </form>
+            </>
           ) : montagem.status === "CONCLUIDO" ? (
             <>
               <p className="mt-1 mb-3 text-sm text-slate-500">
-                Esse pedido veio do CentralSync e já foi concluído aqui
-                {montagem.montador ? ` por ${montagem.montador.nome}` : ""}. Confirme
-                para enviar a foto e as assinaturas de volta pra lá.
+                Montagem concluída
+                {montagem.feitoPorAdm
+                  ? " pela própria empresa"
+                  : montagem.montador
+                    ? ` por ${montagem.montador.nome}`
+                    : ""}
+                . Confira a foto e as assinaturas acima — o CentralSync só recebe
+                a conclusão quando você enviar daqui.
               </p>
-              <form action={confirmarEnvioCentralSyncAction.bind(null, montagem.id)}>
-                <SubmitButton pendingText="Enviando…">Confirmar e avisar o CentralSync</SubmitButton>
+              <form action={confirmarEnvioCentralSyncAction.bind(null, montagem.id, "montagem")}>
+                <SubmitButton pendingText="Enviando…">Enviar ao CentralSync</SubmitButton>
               </form>
             </>
           ) : (
             <p className="mt-1 text-sm text-slate-500">
-              Assim que a montagem for concluída (foto + assinaturas), você
-              poderá confirmar o envio da conclusão de volta pro CentralSync
-              aqui.
+              Esse pedido veio do CentralSync. Quando quem for montar concluir
+              (foto + assinaturas), a montagem aparece aqui e no painel geral com
+              o botão para você conferir e enviar a conclusão para a loja.
             </p>
           )}
         </Card>

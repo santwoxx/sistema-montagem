@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { Badge, Card, PageHeader, Select, StatCard, Vazio } from "@/components/ui";
+import { Badge, Button, Card, Field, Input, PageHeader, Select, StatCard, Vazio } from "@/components/ui";
+import { somarValorDevidoPelaLoja } from "@/lib/financeiro";
 import { formatarData, formatarMoeda } from "@/lib/format";
 import type { Prisma } from "@prisma/client";
 
@@ -41,12 +42,16 @@ export default async function FinanceiroPage({
     include: { loja: true, montador: true },
   });
 
-  const totalServico = montagens.reduce((soma, m) => soma + (m.valorServico * 0.08) + (m.valorAssistencia || 0), 0);
+  // Receita da empresa != valor das notas: a empresa fica com o acerto
+  // padrão sobre a nota mais a assistência da loja (ver lib/financeiro.ts),
+  // enquanto a comissão do montador sai sobre o valor cheio da nota.
+  const totalNotas = montagens.reduce((soma, m) => soma + m.valorServico, 0);
+  const receitaEmpresa = somarValorDevidoPelaLoja(montagens);
   const totalMontador = montagens.reduce((soma, m) => soma + m.valorMontador, 0);
-  const totalEmpresa = totalServico - totalMontador;
-  const totalPendenteLoja = montagens
-    .filter((m) => !m.pagoPelaLoja)
-    .reduce((soma, m) => soma + (m.valorServico * 0.08) + (m.valorAssistencia || 0), 0);
+  const totalEmpresa = receitaEmpresa - totalMontador;
+  const totalPendenteLoja = somarValorDevidoPelaLoja(
+    montagens.filter((m) => !m.pagoPelaLoja)
+  );
   const totalPendenteMontador = montagens
     .filter((m) => !m.pagoAoMontador)
     .reduce((soma, m) => soma + m.valorMontador, 0);
@@ -60,17 +65,10 @@ export default async function FinanceiroPage({
 
       <Card className="mb-6">
         <form className="grid gap-3 sm:grid-cols-4">
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-gray-700">Mês</label>
-            <input
-              type="month"
-              name="mes"
-              defaultValue={mes}
-              className="w-full rounded-lg border border-gray-300 bg-white px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
-            />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-gray-700">Loja</label>
+          <Field label="Mês">
+            <Input type="month" name="mes" defaultValue={mes} />
+          </Field>
+          <Field label="Loja">
             <Select name="lojaId" defaultValue={lojaId}>
               <option value="">Todas</option>
               {lojas.map((l) => (
@@ -79,11 +77,8 @@ export default async function FinanceiroPage({
                 </option>
               ))}
             </Select>
-          </div>
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-gray-700">
-              Montador
-            </label>
+          </Field>
+          <Field label="Montador">
             <Select name="montadorId" defaultValue={montadorId}>
               <option value="">Todos</option>
               {montadores.map((m) => (
@@ -92,20 +87,28 @@ export default async function FinanceiroPage({
                 </option>
               ))}
             </Select>
-          </div>
+          </Field>
           <div className="flex items-end">
-            <button
-              type="submit"
-              className="w-full rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800"
-            >
+            <Button type="submit" className="w-full">
               Filtrar
-            </button>
+            </Button>
           </div>
         </form>
       </Card>
 
       <div className="mb-6 grid grid-cols-1 gap-4 min-[420px]:grid-cols-2 sm:grid-cols-3">
-        <StatCard titulo="Faturamento (serviços)" valor={formatarMoeda(totalServico)} icone="🧾" />
+        <StatCard
+          titulo="Valor das notas"
+          valor={formatarMoeda(totalNotas)}
+          sub="Soma cheia dos serviços no período"
+          icone="🧾"
+        />
+        <StatCard
+          titulo="Receita da empresa"
+          valor={formatarMoeda(receitaEmpresa)}
+          sub="8% das notas + assistências"
+          icone="🏢"
+        />
         <StatCard
           titulo="Comissões dos montadores"
           valor={formatarMoeda(totalMontador)}

@@ -55,20 +55,17 @@ export function formatarCnpj(cnpj: string | null | undefined) {
   );
 }
 
-export function linkMapa(endereco: string) {
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-    endereco
-  )}`;
-}
+// linkMapa/linkWaze moram em lib/mapas.ts, junto com os links de rota com
+// várias paradas usados no painel do admin.
 
-export function linkWaze(endereco: string) {
-  return `https://waze.com/ul?q=${encodeURIComponent(endereco)}&navigate=yes`;
-}
-
-export function linkWhatsapp(telefone: string) {
+// Único lugar que monta link de WhatsApp: o prefixo 55 (código do Brasil)
+// estava repetido em quatro arquivos, e uma mensagem pronta é o caso mais
+// comum (aviso de ocorrência para a loja, pedido de avaliação, rota do dia).
+export function linkWhatsapp(telefone: string, mensagem?: string) {
   const digitos = apenasDigitos(telefone);
   const comCodigoPais = digitos.startsWith("55") ? digitos : `55${digitos}`;
-  return `https://wa.me/${comCodigoPais}`;
+  const base = `https://wa.me/${comCodigoPais}`;
+  return mensagem ? `${base}?text=${encodeURIComponent(mensagem)}` : base;
 }
 
 export function linkTelefone(telefone: string) {

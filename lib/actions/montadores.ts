@@ -41,7 +41,7 @@ export async function criarMontadorAction(formData: FormData) {
 
   const senhaHash = await hashPassword(senha);
 
-  const montador = await prisma.user.create({
+  await prisma.user.create({
     data: {
       nome,
       email,

@@ -151,6 +151,9 @@ model Montagem {
   @@index([createdAt])
   @@index([concluidoEm])
   @@index([dataAgendada])
+  // Fila de envio ao CentralSync (numeroPedido "del-...") no painel do admin
+  // e checagem de pedido repetido na API de notas pendentes.
+  @@index([numeroPedido])
 }
 
 // Pedido recebido de um sistema externo (hoje, só o CentralSync) via API,
@@ -187,6 +190,7 @@ model NotaPendente {
   criadaEm DateTime @default(now())
 
   @@index([montadorSugeridoId])
+  @@index([numeroPedido])
 }
 
 // Registro de visitas em que o montador não conseguiu concluir a

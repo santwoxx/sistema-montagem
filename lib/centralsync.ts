@@ -7,6 +7,11 @@
 // Fica num arquivo à parte (em vez de lib/actions/montagens.ts) porque esse
 // é um arquivo "use server" -- só pode exportar Server Actions (funções
 // async), e esta é só uma função utilitária síncrona.
+export const PREFIXO_PEDIDO_CENTRALSYNC = "del-";
+
 export function pareceIdDoCentralSync(numeroPedido: string | null): numeroPedido is string {
-  return typeof numeroPedido === "string" && numeroPedido.startsWith("del-");
+  return (
+    typeof numeroPedido === "string" &&
+    numeroPedido.startsWith(PREFIXO_PEDIDO_CENTRALSYNC)
+  );
 }

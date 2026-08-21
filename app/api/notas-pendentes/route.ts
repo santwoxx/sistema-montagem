@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { normalizarCnpj } from "@/lib/cnpj";
 
@@ -49,6 +50,21 @@ function urlValida(valor: unknown, tamanhoMaximo: number): string | undefined {
   }
 }
 
+// Comparação de chave em tempo constante: com === o tempo da resposta varia
+// conforme quantos caracteres iniciais batem, e dá para medir isso de fora e
+// ir adivinhando a chave caractere a caractere.
+function chaveConfere(recebida: string | null, esperada: string) {
+  if (!recebida) return false;
+  const a = Buffer.from(recebida);
+  const b = Buffer.from(esperada);
+  if (a.length !== b.length) {
+    // Ainda assim faz uma comparação, para o tempo não denunciar o tamanho.
+    timingSafeEqual(b, b);
+    return false;
+  }
+  return timingSafeEqual(a, b);
+}
+
 function numeroPositivoValido(valor: unknown): number | undefined {
   if (typeof valor !== "number" || !Number.isFinite(valor) || valor <= 0) return undefined;
   return Math.round(valor * 100) / 100;
@@ -56,9 +72,8 @@ function numeroPositivoValido(valor: unknown): number | undefined {
 
 export async function POST(request: Request) {
   const chaveEsperada = process.env.CENTRALSYNC_API_KEY;
-  const chaveRecebida = request.headers.get("x-centralsync-key");
 
-  if (!chaveEsperada || chaveRecebida !== chaveEsperada) {
+  if (!chaveEsperada || !chaveConfere(request.headers.get("x-centralsync-key"), chaveEsperada)) {
     return jsonResponse(401, { ok: false, erro: "Chave de acesso inválida." });
   }
 
@@ -100,6 +115,28 @@ export async function POST(request: Request) {
   if (dataAgendadaBruta) {
     const parsed = new Date(`${dataAgendadaBruta}T12:00:00`);
     if (!Number.isNaN(parsed.getTime())) dataAgendada = parsed;
+  }
+
+  // Reenvio do mesmo pedido (repique do CentralSync, retry por timeout,
+  // alguém clicando duas vezes lá) não pode virar duas notas na fila nem
+  // ressuscitar um pedido que já foi revisado e virou montagem. Responde
+  // 200 nos dois casos, senão o CentralSync fica tentando de novo à toa.
+  if (numeroPedido) {
+    const [notaExistente, montagemExistente] = await Promise.all([
+      prisma.notaPendente.findFirst({ where: { numeroPedido }, select: { id: true } }),
+      prisma.montagem.findFirst({ where: { numeroPedido }, select: { id: true } }),
+    ]);
+    if (notaExistente) {
+      return jsonResponse(200, { ok: true, id: notaExistente.id, duplicado: true });
+    }
+    if (montagemExistente) {
+      return jsonResponse(200, {
+        ok: true,
+        id: montagemExistente.id,
+        duplicado: true,
+        jaVirouMontagem: true,
+      });
+    }
   }
 
   let montadorSugeridoId: string | undefined;

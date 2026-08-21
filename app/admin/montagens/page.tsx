@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { Badge, Card, LinkButton, PageHeader, Select, Vazio } from "@/components/ui";
+import { Badge, Button, Card, Input, LinkButton, PageHeader, Select, Vazio } from "@/components/ui";
 import { formatarData, formatarMoeda, STATUS_COLOR, STATUS_LABEL } from "@/lib/format";
 import type { Prisma, StatusMontagem } from "@prisma/client";
 
@@ -11,9 +11,11 @@ export default async function MontagensPage({
     status?: string;
     lojaId?: string;
     montadorId?: string;
+    busca?: string;
   }>;
 }) {
-  const { status, lojaId, montadorId } = await searchParams;
+  const { status, lojaId, montadorId, busca } = await searchParams;
+  const termo = (busca ?? "").trim();
 
   const [lojas, montadores] = await Promise.all([
     prisma.loja.findMany({ orderBy: { nome: "asc" } }),
@@ -24,6 +26,16 @@ export default async function MontagensPage({
   if (status) where.status = status as StatusMontagem;
   if (lojaId) where.lojaId = lojaId;
   if (montadorId) where.montadorId = montadorId === "nenhum" ? null : montadorId;
+  // A lista corta nas 100 mais recentes: sem uma busca, uma montagem antiga
+  // só era encontrada garimpando os filtros de loja/montador um a um.
+  if (termo) {
+    where.OR = [
+      { clienteNome: { contains: termo, mode: "insensitive" } },
+      { numeroPedido: { contains: termo, mode: "insensitive" } },
+      { clienteEndereco: { contains: termo, mode: "insensitive" } },
+      { descricaoServico: { contains: termo, mode: "insensitive" } },
+    ];
+  }
 
   const LIMITE = 100;
   const [montagens, totalMontagens] = await Promise.all([
@@ -46,6 +58,13 @@ export default async function MontagensPage({
 
       <Card className="mb-6">
         <form className="grid gap-3 sm:grid-cols-3">
+          <div className="sm:col-span-3">
+            <Input
+              name="busca"
+              defaultValue={termo}
+              placeholder="Buscar por cliente, endereço, nº do pedido ou serviço"
+            />
+          </div>
           <Select name="status" defaultValue={status ?? ""}>
             <option value="">Todos os status</option>
             <option value="PENDENTE">Pendente</option>
@@ -71,12 +90,7 @@ export default async function MontagensPage({
             ))}
           </Select>
           <div className="sm:col-span-3">
-            <button
-              type="submit"
-              className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
-            >
-              Filtrar
-            </button>
+            <Button type="submit">Filtrar</Button>
             <Link
               href="/admin/montagens"
               className="ml-3 text-sm text-gray-500 hover:underline"

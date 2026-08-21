@@ -5,6 +5,7 @@ import { NavBar, type NavLink } from "@/components/NavBar";
 const links: NavLink[] = [
   { href: "/admin", label: "Painel" },
   { href: "/admin/montagens", label: "Montagens" },
+  { href: "/admin/rota", label: "Rota" },
   { href: "/admin/montagens/nova", label: "Importar nota" },
   { href: "/admin/montadores", label: "Montadores" },
   { href: "/admin/lojas", label: "Lojas" },

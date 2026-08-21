@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { put } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getSession, requireAdmin } from "@/lib/auth";
-import { apenasDigitos, OCORRENCIA_LABEL, paraNumeroBr } from "@/lib/format";
+import { linkWhatsapp, OCORRENCIA_LABEL, paraNumeroBr } from "@/lib/format";
 import { pareceIdDoCentralSync } from "@/lib/centralsync";
 
 function paraNumero(valor: FormDataEntryValue | null, padrao = 0) {
@@ -22,6 +22,33 @@ function paraData(valor: FormDataEntryValue | null) {
 
 function arredondar(valor: number) {
   return Math.round(valor * 100) / 100;
+}
+
+// Percentual sempre entre 0 e 100. Sem esse limite, um valor digitado
+// errado (ou um "-10" mandado direto no POST do formulário) gravava
+// comissão negativa e contaminava o financeiro sem nenhum aviso.
+function paraPercentual(valor: FormDataEntryValue | null) {
+  const numero = arredondar(paraNumero(valor));
+  if (numero < 0) return 0;
+  return numero > 100 ? 100 : numero;
+}
+
+// Toda ação que mexe numa montagem afeta as mesmas telas dos dois painéis:
+// listagem, painel geral, financeiro e a rota do dia. Antes cada ação
+// repetia a sua própria lista de revalidatePath e as listas divergiam --
+// era por isso que o financeiro do admin continuava mostrando números
+// velhos depois de criar ou excluir uma montagem.
+function revalidarMontagem(id?: string) {
+  revalidatePath("/admin");
+  revalidatePath("/admin/montagens");
+  revalidatePath("/admin/financeiro");
+  revalidatePath("/admin/rota");
+  revalidatePath("/montador");
+  revalidatePath("/montador/financeiro");
+  if (id) {
+    revalidatePath(`/admin/montagens/${id}`);
+    revalidatePath(`/montador/montagens/${id}`);
+  }
 }
 
 const TAMANHO_MAXIMO_MANUAL = 20 * 1024 * 1024; // 20 MB
@@ -73,8 +100,8 @@ export async function criarMontagemAction(formData: FormData) {
   const observacoes = String(formData.get("observacoes") || "").trim();
 
   const valorServico = arredondar(paraNumero(formData.get("valorServico")));
-  const percentualAssistencia = arredondar(paraNumero(formData.get("percentualAssistencia")));
-  const percentualMontador = arredondar(paraNumero(formData.get("percentualMontador")));
+  const percentualAssistencia = paraPercentual(formData.get("percentualAssistencia"));
+  const percentualMontador = paraPercentual(formData.get("percentualMontador"));
   const dataAgendada = paraData(formData.get("dataAgendada"));
 
   if (!lojaId || !clienteNome || !clienteEndereco || !descricaoServico || valorServico <= 0) {
@@ -135,9 +162,7 @@ export async function criarMontagemAction(formData: FormData) {
     await prisma.notaPendente.delete({ where: { id: notaPendenteId } }).catch(() => {});
   }
 
-  revalidatePath("/admin/montagens");
-  revalidatePath("/admin");
-  revalidatePath("/montador");
+  revalidarMontagem(montagem.id);
   redirect(
     `/admin/montagens/${montagem.id}?sucesso=${encodeURIComponent(
       "Montagem criada com sucesso."
@@ -166,8 +191,8 @@ export async function atualizarMontagemAction(id: string, formData: FormData) {
     | "CANCELADO";
 
   const valorServico = arredondar(paraNumero(formData.get("valorServico")));
-  const percentualAssistencia = arredondar(paraNumero(formData.get("percentualAssistencia")));
-  const percentualMontador = arredondar(paraNumero(formData.get("percentualMontador")));
+  const percentualAssistencia = paraPercentual(formData.get("percentualAssistencia"));
+  const percentualMontador = paraPercentual(formData.get("percentualMontador"));
   const dataAgendada = paraData(formData.get("dataAgendada"));
 
   if (!lojaId || !clienteNome || !clienteEndereco || !descricaoServico || valorServico <= 0) {
@@ -211,13 +236,9 @@ export async function atualizarMontagemAction(id: string, formData: FormData) {
     },
   });
 
-  revalidatePath("/admin/montagens");
-  revalidatePath(`/admin/montagens/${id}`);
-  revalidatePath("/admin");
   // Essa ação pode mudar o que o montador vê (montador designado, manual
   // anexado, endereço etc.), então o lado dele também precisa atualizar.
-  revalidatePath("/montador");
-  revalidatePath(`/montador/montagens/${id}`);
+  revalidarMontagem(id);
   redirect(
     `/admin/montagens/${id}?sucesso=${encodeURIComponent("Montagem atualizada.")}`
   );
@@ -259,10 +280,7 @@ export async function atualizarClienteMontadorAction(id: string, formData: FormD
     data: { clienteEndereco, clienteTelefone: clienteTelefone || null },
   });
 
-  revalidatePath("/admin/montagens");
-  revalidatePath(`/admin/montagens/${id}`);
-  revalidatePath("/montador");
-  revalidatePath(`/montador/montagens/${id}`);
+  revalidarMontagem(id);
   redirect(
     `${caminho}?sucesso=${encodeURIComponent("Endereço do cliente atualizado.")}`
   );
@@ -282,11 +300,7 @@ export async function atualizarStatusAction(
     },
   });
 
-  revalidatePath("/admin/montagens");
-  revalidatePath(`/admin/montagens/${id}`);
-  revalidatePath("/montador");
-  revalidatePath("/montador/financeiro");
-  revalidatePath(`/montador/montagens/${id}`);
+  revalidarMontagem(id);
   redirect(caminhoDetalhe(session.role, id));
 }
 
@@ -301,10 +315,12 @@ export async function atualizarStatusAction(
 const CENTRALSYNC_CONFIRMATION_URL = "https://us-central1-centralsync-c5b50.cloudfunctions.net/receiveMontagemConfirmation";
 const CENTRALSYNC_SHARED_KEY = process.env.MONTAFACIL_TO_CENTRALSYNC_KEY;
 
-// O montador (o Dário ou qualquer um da equipe dele) concluir aqui NÃO
-// avisa o CentralSync sozinho -- ver confirmarEnvioCentralSyncAction, que só
-// um admin (o Dário) consegue disparar, depois de revisar a montagem
-// concluída no painel dele.
+// Chamado só pelo admin, pelo botão "Enviar ao CentralSync" (ver
+// confirmarEnvioCentralSyncAction): o montador concluir aqui NÃO dispara
+// nada sozinho. Do outro lado também nada é aplicado automaticamente: a
+// confirmação entra na caixa "Montagens Feitas" da aba Entregas e um admin
+// do CentralSync marca a entrega como montada depois de conferir foto e
+// assinaturas.
 async function avisarCentralSync(
   deliveryId: string,
   montadorNome: string | null,
@@ -324,6 +340,10 @@ async function avisarCentralSync(
         "x-montafacil-key": CENTRALSYNC_SHARED_KEY,
       },
       body: JSON.stringify({ deliveryId, montadorNome, assemblerSignature, customerSignature, photo }),
+      // Quem espera por esta chamada é o admin, na tela da montagem. Um
+      // CentralSync fora do ar não pode deixar a tela travada: desiste em
+      // 10s e o admin tenta de novo pelo mesmo botão.
+      signal: AbortSignal.timeout(10_000),
     });
     if (!resposta.ok) {
       console.warn("CentralSync recusou a confirmação de montagem:", resposta.status);
@@ -340,9 +360,11 @@ export async function concluirComProvaAction(id: string, formData: FormData) {
   const session = await getSession();
   if (!session) redirect("/login");
 
+  // Só precisamos saber de quem é a montagem: o nome do montador só importa
+  // no envio ao CentralSync, que hoje acontece no painel do admin.
   const montagem = await prisma.montagem.findUnique({
     where: { id },
-    include: { montador: { select: { nome: true } } },
+    select: { montadorId: true },
   });
   if (!montagem) redirect("/montador");
   if (session.role !== "MONTADOR" || montagem.montadorId !== session.sub) {
@@ -396,23 +418,32 @@ export async function concluirComProvaAction(id: string, formData: FormData) {
     },
   });
 
-  // Não avisa o CentralSync aqui, mesmo que a montagem tenha vindo de lá --
-  // isso fica pro admin confirmar depois de revisar (ver
-  // confirmarEnvioCentralSyncAction), já que quem concluiu pode ter sido
-  // qualquer montador da equipe, não só o Dário.
-
-  revalidatePath("/admin/montagens");
-  revalidatePath("/montador");
-  revalidatePath("/montador/financeiro");
-  revalidatePath(`/montador/montagens/${id}`);
-  revalidatePath(`/admin/montagens/${id}`);
+  // Concluir aqui NÃO avisa o CentralSync. Quem monta é o funcionário, mas
+  // quem responde pela empresa perante a loja é o admin: a montagem
+  // concluída entra na fila "Prontas para enviar ao CentralSync" do painel
+  // do admin (ver app/admin/page.tsx) e só sai de lá quando ele confere a
+  // foto e as assinaturas e clica em enviar (confirmarEnvioCentralSyncAction).
+  // Fora que o montador está na rua, muitas vezes com internet ruim --
+  // esperar a Cloud Function do CentralSync responder só pra ele conseguir
+  // fechar a montagem era risco sem contrapartida.
+  revalidarMontagem(id);
   redirect(`/montador/montagens/${id}`);
 }
 
-// Disparada pelo admin (o Dário) no painel dele depois de revisar uma
-// montagem concluída por ele ou por um funcionário -- só nesse clique o
-// CentralSync é avisado (assinaturas + foto), nunca automaticamente.
-export async function confirmarEnvioCentralSyncAction(id: string) {
+// Único caminho pelo qual uma conclusão sai daqui para o CentralSync,
+// disparado pelo admin na fila do painel ou na tela da montagem. Serve
+// tanto para o primeiro envio quanto para reenviar: do outro lado o
+// documento é gravado pelo id da entrega, então reenviar sobrescreve o
+// mesmo aviso em vez de criar outro.
+//
+// `origem` diz só para onde devolver o admin depois do clique: a fila do
+// painel geral ou a tela da montagem. Os dois argumentos são sempre fixados
+// com .bind no formulário -- assim a Server Action recebe zero argumentos de
+// quem clica, e não dá para forjar um destino de redirecionamento.
+export async function confirmarEnvioCentralSyncAction(
+  id: string,
+  origem: "painel" | "montagem"
+) {
   await requireAdmin();
 
   const montagem = await prisma.montagem.findUnique({
@@ -421,31 +452,46 @@ export async function confirmarEnvioCentralSyncAction(id: string) {
   });
   if (!montagem) redirect("/admin/montagens");
 
+  const voltarPara = origem === "painel" ? "/admin" : `/admin/montagens/${id}`;
+  const comErro = (mensagem: string) =>
+    redirect(`${voltarPara}?erro=${encodeURIComponent(mensagem)}`);
+
   if (!pareceIdDoCentralSync(montagem.numeroPedido)) {
-    redirect(`/admin/montagens/${id}`);
+    comErro("Esta montagem não veio do CentralSync, então não há o que enviar para lá.");
+    return;
   }
   if (montagem.status !== "CONCLUIDO") {
-    redirect(
-      `/admin/montagens/${id}?erro=${encodeURIComponent(
-        "Marque a montagem como concluída (foto + assinaturas) antes de confirmar o envio ao CentralSync."
-      )}`
+    comErro("Marque a montagem como concluída antes de enviar a confirmação ao CentralSync.");
+    return;
+  }
+
+  // A loja confere justamente a foto e as duas assinaturas. Mandar isso
+  // vazio criava um aviso inútil do outro lado -- e marcava a montagem como
+  // já enviada aqui, escondendo o problema.
+  const faltando = [
+    montagem.fotoProdutoUrl ? null : "a foto do produto montado",
+    montagem.assinaturaMontador ? null : "a assinatura de quem montou",
+    montagem.assinaturaCliente ? null : "a assinatura do cliente",
+  ].filter((item): item is string => item !== null);
+
+  if (faltando.length > 0) {
+    comErro(
+      `Falta ${faltando.join(", ")} para enviar ao CentralSync. Peça para quem montou concluir a montagem pelo aplicativo (foto + assinaturas).`
     );
+    return;
   }
 
   const sucesso = await avisarCentralSync(
     montagem.numeroPedido,
     montagem.montador?.nome ?? null,
-    montagem.assinaturaMontador ?? "",
-    montagem.assinaturaCliente ?? "",
-    montagem.fotoProdutoUrl ?? ""
+    montagem.assinaturaMontador!,
+    montagem.assinaturaCliente!,
+    montagem.fotoProdutoUrl!
   );
 
   if (!sucesso) {
-    redirect(
-      `/admin/montagens/${id}?erro=${encodeURIComponent(
-        "Não consegui avisar o CentralSync agora. Tente de novo em instantes."
-      )}`
-    );
+    comErro("Não consegui avisar o CentralSync agora. Tente de novo em instantes.");
+    return;
   }
 
   await prisma.montagem.update({
@@ -456,7 +502,7 @@ export async function confirmarEnvioCentralSyncAction(id: string) {
   revalidatePath(`/admin/montagens/${id}`);
   revalidatePath("/admin");
   redirect(
-    `/admin/montagens/${id}?sucesso=${encodeURIComponent("CentralSync avisado da conclusão.")}`
+    `${voltarPara}?sucesso=${encodeURIComponent("CentralSync avisado da conclusão.")}`
   );
 }
 
@@ -522,10 +568,7 @@ export async function registrarOcorrenciaAction(
     }),
   ]);
 
-  revalidatePath("/admin/montagens");
-  revalidatePath("/montador");
-  revalidatePath(`/montador/montagens/${id}`);
-  revalidatePath(`/admin/montagens/${id}`);
+  revalidarMontagem(id);
 
   const linhasMensagem = [
     "🚨 *Problema na montagem*",
@@ -551,11 +594,7 @@ export async function registrarOcorrenciaAction(
     };
   }
 
-  const digitos = apenasDigitos(montagem.loja.telefone);
-  const comCodigoPais = digitos.startsWith("55") ? digitos : `55${digitos}`;
-  const url = `https://wa.me/${comCodigoPais}?text=${encodeURIComponent(mensagem)}`;
-
-  return { ok: true, url };
+  return { ok: true, url: linkWhatsapp(montagem.loja.telefone, mensagem) };
 }
 
 export async function alternarPagamentoLojaAction(id: string) {
@@ -568,9 +607,7 @@ export async function alternarPagamentoLojaAction(id: string) {
     data: { pagoPelaLoja: !montagem!.pagoPelaLoja },
   });
 
-  revalidatePath(`/admin/montagens/${id}`);
-  revalidatePath("/admin/financeiro");
-  revalidatePath("/admin");
+  revalidarMontagem(id);
   redirect(`/admin/montagens/${id}`);
 }
 
@@ -584,16 +621,9 @@ export async function alternarPagamentoMontadorAction(id: string) {
     data: { pagoAoMontador: !montagem!.pagoAoMontador },
   });
 
-  revalidatePath(`/admin/montagens/${id}`);
-  revalidatePath("/admin/financeiro");
-  revalidatePath("/admin");
   // O pagamento afeta diretamente o que o montador vê no painel dele (o
-  // valor "a receber" some da lista assim que marcado como pago) — sem
-  // isso o painel do montador ficava com dado desatualizado até expirar
-  // o cache por conta própria.
-  revalidatePath("/montador");
-  revalidatePath("/montador/financeiro");
-  revalidatePath(`/montador/montagens/${id}`);
+  // valor "a receber" some da lista assim que marcado como pago).
+  revalidarMontagem(id);
   redirect(`/admin/montagens/${id}`);
 }
 
@@ -602,11 +632,7 @@ export async function excluirMontagemAction(id: string) {
 
   await prisma.montagem.delete({ where: { id } });
 
-  revalidatePath("/admin/montagens");
-  revalidatePath("/admin/financeiro");
-  revalidatePath("/admin");
-  revalidatePath("/montador");
-  revalidatePath("/montador/financeiro");
+  revalidarMontagem(id);
   redirect(
     `/admin/montagens?sucesso=${encodeURIComponent("Montagem excluída.")}`
   );

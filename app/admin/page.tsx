@@ -1,9 +1,22 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { formatarData, formatarMoeda, STATUS_COLOR, STATUS_LABEL } from "@/lib/format";
-import { Badge, Card, LinkButton, PageHeader, StatCard, Vazio } from "@/components/ui";
+import { confirmarEnvioCentralSyncAction } from "@/lib/actions/montagens";
+import { PREFIXO_PEDIDO_CENTRALSYNC } from "@/lib/centralsync";
+import { valorDevidoPelaLoja } from "@/lib/financeiro";
+import { formatarData, formatarDataHora, formatarMoeda, STATUS_COLOR, STATUS_LABEL } from "@/lib/format";
+import { Alerta, Badge, Card, LinkButton, PageHeader, StatCard, Vazio } from "@/components/ui";
+import { SubmitButton } from "@/components/SubmitButton";
 
-export default async function AdminDashboardPage() {
+// Quantas montagens da fila do CentralSync a tela lista de uma vez.
+const LIMITE_FILA = 10;
+
+export default async function AdminDashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ erro?: string; sucesso?: string }>;
+}) {
+  const { erro, sucesso } = await searchParams;
+
   const inicioMes = new Date();
   inicioMes.setDate(1);
   inicioMes.setHours(0, 0, 0, 0);
@@ -19,7 +32,7 @@ export default async function AdminDashboardPage() {
     montadoresAtivos,
     proximas,
     notasPendentesCount,
-    aguardandoConfirmacaoCentralSync,
+    filaCentralSync,
   ] = await Promise.all([
     prisma.montagem.count({ where: { status: "PENDENTE" } }),
     prisma.montagem.count({ where: { status: "EM_ANDAMENTO" } }),
@@ -27,7 +40,7 @@ export default async function AdminDashboardPage() {
       where: { montadorId: null, status: { not: "CANCELADO" } },
     }),
     prisma.montagem.aggregate({
-      _sum: { valorServico: true },
+      _sum: { valorServico: true, valorAssistencia: true },
       where: { pagoPelaLoja: false, status: { not: "CANCELADO" } },
     }),
     prisma.montagem.aggregate({
@@ -51,16 +64,39 @@ export default async function AdminDashboardPage() {
       include: { loja: true, montador: true },
     }),
     prisma.notaPendente.count(),
+    // Fila de montagens do CentralSync já concluídas aqui e ainda não
+    // enviadas para a loja. As assinaturas ficam de fora do select de
+    // propósito: são imagens em base64 (campos Text grandes) e aqui só
+    // precisamos saber se o comprovante existe — a foto já responde isso,
+    // porque a conclusão pelo app do montador grava as três coisas juntas.
     prisma.montagem.findMany({
       where: {
         status: "CONCLUIDO",
-        numeroPedido: { startsWith: "del-" },
+        numeroPedido: { startsWith: PREFIXO_PEDIDO_CENTRALSYNC },
         notificadoCentralSyncEm: null,
       },
-      select: { id: true, clienteNome: true, montador: { select: { nome: true } } },
-      take: 5,
+      orderBy: { concluidoEm: "asc" },
+      // 11 para saber que passou de 10 sem gastar um count() a mais.
+      take: LIMITE_FILA + 1,
+      select: {
+        id: true,
+        clienteNome: true,
+        numeroPedido: true,
+        concluidoEm: true,
+        fotoProdutoUrl: true,
+        feitoPorAdm: true,
+        montador: { select: { nome: true } },
+      },
     }),
   ]);
+
+  const filaVisivel = filaCentralSync.slice(0, LIMITE_FILA);
+  const temMaisNaFila = filaCentralSync.length > LIMITE_FILA;
+
+  const aReceberDasLojas = valorDevidoPelaLoja({
+    valorServico: aReceberAgg._sum.valorServico || 0,
+    valorAssistencia: aReceberAgg._sum.valorAssistencia || 0,
+  });
 
   return (
     <div>
@@ -68,9 +104,17 @@ export default async function AdminDashboardPage() {
         titulo="Painel geral"
         descricao="Visão rápida das montagens e das finanças da sua empresa."
         acoes={
-          <LinkButton href="/admin/montagens/nova">+ Nova montagem</LinkButton>
+          <>
+            <LinkButton href="/admin/rota" variante="secundario">
+              🗺️ Rota do dia
+            </LinkButton>
+            <LinkButton href="/admin/montagens/nova">+ Nova montagem</LinkButton>
+          </>
         }
       />
+
+      {erro ? <Alerta tipo="erro">{erro}</Alerta> : null}
+      {sucesso ? <Alerta tipo="sucesso">{sucesso}</Alerta> : null}
 
       {notasPendentesCount > 0 ? (
         <Link href="/admin/montagens/nova" className="mb-6 block">
@@ -86,25 +130,89 @@ export default async function AdminDashboardPage() {
         </Link>
       ) : null}
 
-      {aguardandoConfirmacaoCentralSync.length > 0 ? (
-        <Card className="mb-6 border-blue-100 bg-blue-50/40">
+      {filaVisivel.length > 0 ? (
+        <Card className="mb-6 border-blue-200 bg-blue-50/40">
           <p className="font-semibold text-slate-900">
-            📤 {aguardandoConfirmacaoCentralSync.length} montagem
-            {aguardandoConfirmacaoCentralSync.length > 1 ? "ns" : ""} concluída
-            {aguardandoConfirmacaoCentralSync.length > 1 ? "s" : ""} esperando confirmação para o CentralSync
+            📤 {temMaisNaFila ? `Mais de ${LIMITE_FILA}` : filaVisivel.length} montagem
+            {filaVisivel.length > 1 ? "ns" : ""} pronta
+            {filaVisivel.length > 1 ? "s" : ""} para enviar ao CentralSync
           </p>
-          <div className="mt-2 space-y-1">
-            {aguardandoConfirmacaoCentralSync.map((m) => (
-              <Link
+          <p className="mt-1 text-sm text-slate-500">
+            Quem montou já concluiu aqui. Confira o comprovante e envie para a
+            loja — só depois disso a montagem aparece lá para eles darem baixa.
+          </p>
+
+          <div className="mt-4 space-y-3">
+            {filaVisivel.map((m) => (
+              <div
                 key={m.id}
-                href={`/admin/montagens/${m.id}`}
-                className="block text-sm text-blue-700 hover:underline"
+                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3"
               >
-                {m.clienteNome}
-                {m.montador ? ` — concluída por ${m.montador.nome}` : ""}
-              </Link>
+                <div className="flex min-w-0 items-center gap-3">
+                  {m.fotoProdutoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- blob externo (Vercel Blob), sem next/image configurado para esse domínio
+                    <img
+                      src={m.fotoProdutoUrl}
+                      alt="Foto do produto montado"
+                      className="h-14 w-14 shrink-0 rounded-lg border border-slate-200 object-cover"
+                    />
+                  ) : (
+                    <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border border-dashed border-amber-300 bg-amber-50 text-lg">
+                      ⚠️
+                    </span>
+                  )}
+                  <div className="min-w-0">
+                    <Link
+                      href={`/admin/montagens/${m.id}`}
+                      className="font-medium text-slate-900 hover:underline"
+                    >
+                      {m.clienteNome}
+                    </Link>
+                    <p className="truncate text-xs text-slate-500">
+                      {m.feitoPorAdm
+                        ? "Montado pela própria empresa"
+                        : m.montador
+                          ? `Montado por ${m.montador.nome}`
+                          : "Sem montador designado"}
+                      {m.concluidoEm ? ` · ${formatarDataHora(m.concluidoEm)}` : ""}
+                    </p>
+                    <p className="truncate text-xs text-slate-400">
+                      Entrega {m.numeroPedido}
+                    </p>
+                    {m.fotoProdutoUrl ? null : (
+                      <p className="text-xs font-medium text-amber-700">
+                        Sem foto e assinaturas — não dá para enviar ainda.
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  {m.fotoProdutoUrl ? (
+                    <form action={confirmarEnvioCentralSyncAction.bind(null, m.id, "painel")}>
+                      <SubmitButton className="px-3 py-2 text-sm" pendingText="Enviando…">
+                        Enviar ao CentralSync
+                      </SubmitButton>
+                    </form>
+                  ) : (
+                    <LinkButton
+                      href={`/admin/montagens/${m.id}`}
+                      variante="secundario"
+                      className="px-3 py-2 text-sm"
+                    >
+                      Abrir montagem
+                    </LinkButton>
+                  )}
+                </div>
+              </div>
             ))}
           </div>
+
+          {temMaisNaFila ? (
+            <p className="mt-3 text-sm text-slate-500">
+              Há mais montagens esperando envio. Envie estas e recarregue a
+              página para ver as próximas.
+            </p>
+          ) : null}
         </Card>
       ) : null}
 
@@ -119,8 +227,8 @@ export default async function AdminDashboardPage() {
         />
         <StatCard
           titulo="A receber das lojas"
-          valor={formatarMoeda(((faturamentoMesAgg._sum.valorServico || 0) * 0.08) + (faturamentoMesAgg._sum.valorAssistencia || 0))}
-          sub="8% sobre o faturamento do mês + Assistências"
+          valor={formatarMoeda(aReceberDasLojas)}
+          sub="Montagens que a loja ainda não pagou (8% + assistência)"
           icone="🏬"
         />
         <StatCard

@@ -51,44 +51,13 @@ async function main() {
     console.log(`Loja "${CENTRAL_MOVEIS_NOME}" já cadastrada.`);
   }
 
-  // 2. Cadastro da Empresa (Loja) e Nota (Montagem)
-  console.log("\nIniciando cadastro da empresa e da nota...");
-
-  const loja = await prisma.loja.upsert({
-    where: { cnpj: '46112641000481' },
-    update: {},
-    create: {
-      nome: 'ITABUNA PNEUS MOVEIS LTDA',
-      telefone: '(73) 3301-2488',
-      endereco: 'Avenida do Cinqüentenário, 812, Centro, Itabuna - BA, 45.600-004',
-      cnpj: '46112641000481',
-      ativo: true,
-    },
-  });
-  console.log(`Loja registrada/encontrada: ${loja.nome}`);
-
-  const montagem = await prisma.montagem.upsert({
-    where: {
-      // Como não temos um unique claro além do ID, buscaremos primeiro e depois usaremos update/create
-      id: (await prisma.montagem.findFirst({ where: { numeroPedido: '404', lojaId: loja.id } }))?.id || 'nova-nota-404'
-    },
-    update: {
-      valorServico: 999.00,
-      status: 'PENDENTE'
-    },
-    create: {
-      numeroPedido: '404',
-      lojaId: loja.id,
-      clienteNome: 'MARIA DE LOURDES SANTOS',
-      clienteTelefone: '(73) 98239-6002',
-      clienteEndereco: 'Rua de Mutuns, 204, Santa Ines, Itabuna - BA, 45.603-662',
-      descricaoServico: 'Montagem: BUFFET MONZA CINAMOMO/OFF WHITE',
-      valorServico: 999.00, 
-      observacoes: 'Nota Fiscal: 404 Série 1, Emissão: 22/06/2026, Valor Produto: R$ 999,00',
-      status: 'PENDENTE',
-    }
-  });
-  console.log(`Nota (Montagem) N° 404 registrada/atualizada com sucesso.`);
+  // Nada além disso é semeado. Este script roda no `npm run build`, ou
+  // seja, a cada deploy: já existiu aqui uma loja e uma montagem de teste
+  // ("nota 404") criadas por upsert, e o update do upsert reescrevia
+  // valorServico e status a cada deploy -- uma montagem real que já tivesse
+  // sido concluída voltava sozinha para PENDENTE. Loja e montagem se
+  // cadastram pelo painel; seed é só para o que o sistema não consegue
+  // criar sozinho (o primeiro admin).
 }
 
 main()

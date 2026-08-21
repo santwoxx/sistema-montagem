@@ -16,6 +16,10 @@ individual para cada montador.
   por OCR direto no navegador, sem custo). Se a loja da nota ainda não
   estiver cadastrada, o sistema cadastra ela automaticamente.
 - Acompanha o status de cada montagem (pendente, em andamento, concluída).
+- Monta a **rota do dia**: lista os endereços dos clientes agendados na ordem
+  da agenda e abre tudo de uma vez no Google Maps (com ponto de partida
+  opcional). Também dá para filtrar por montador e mandar a rota pronta para
+  ele por WhatsApp.
 - Controla os pagamentos: se a loja já pagou a empresa e se o montador já
   recebeu sua comissão.
 - Tem uma tela financeira com totais por mês, por loja e por montador.
@@ -132,13 +136,74 @@ conectando um repositório do GitHub. As mesmas variáveis `DATABASE_URL`,
 (ex: `seusistema.vercel.app`) já funciona tanto para o admin quanto para os
 montadores, em qualquer dispositivo com internet.
 
+## Integração com o CentralSync (loja Central Móveis)
+
+O CentralSync é o sistema da loja. A ligação entre os dois é de mão dupla:
+
+1. **Loja → MontaFácil.** Quando a loja designa um pedido para o Dário, o
+   CentralSync envia os dados para a fila de "Notas pendentes"
+   (`app/api/notas-pendentes/route.ts`). Só vira montagem quando alguém aqui
+   revisa e salva. O pedido chega com o número no formato `del-…`, que é o id
+   da entrega lá — é por ele que os dois sistemas se reconhecem.
+2. **MontaFácil → Loja.** Quando o funcionário conclui a montagem no
+   aplicativo (foto do produto + assinatura dele e do cliente), **nada é
+   enviado para a loja ainda**. A montagem entra na fila "Prontas para enviar
+   ao CentralSync", no painel geral do admin, com a miniatura da foto e o nome
+   de quem montou. O admin confere e clica em **"Enviar ao CentralSync"** —
+   esse é o único caminho pelo qual a conclusão sai daqui. O mesmo botão fica
+   na tela da montagem, e serve também para reenviar (do outro lado o aviso é
+   gravado pelo id da entrega, então reenviar sobrescreve em vez de duplicar).
+
+   Lá no CentralSync isso também **não** marca a entrega como montada na hora:
+   aparece na caixa flutuante "Montagens Feitas" da aba Entregas &
+   Assinaturas, e um administrador da loja confere e confirma.
+
+   Se faltar a foto ou alguma assinatura (por exemplo, quando a montagem foi
+   marcada como concluída direto pelo painel, sem passar pelo aplicativo do
+   montador), o envio é recusado com o aviso do que está faltando — em vez de
+   mandar um comprovante vazio para a loja.
+
+Para isso funcionar, além das variáveis do banco, o projeto precisa de duas
+chaves nas "Environment Variables":
+
+- `CENTRALSYNC_API_KEY` — chave que o CentralSync usa para **entregar** notas
+  pendentes aqui.
+- `MONTAFACIL_TO_CENTRALSYNC_KEY` — chave usada para **avisar** o CentralSync
+  da montagem concluída. Precisa ser igual ao segredo `MONTAFACIL_API_KEY`
+  cadastrado no Firebase do CentralSync (`firebase functions:secrets:set
+  MONTAFACIL_API_KEY`). São chaves diferentes de propósito: a primeira sai no
+  código público do CentralSync, a segunda não pode sair de lugar nenhum.
+
+Sem `MONTAFACIL_TO_CENTRALSYNC_KEY` configurada, a montagem é concluída
+normalmente aqui, mas o botão de enviar falha (fica registrado um alerta no
+log do servidor) e a montagem continua na fila do painel.
+
+## Mapa da rota dentro da tela (opcional)
+
+A tela **Rota** do painel do admin funciona sem nenhuma configuração: ela
+monta os links de rota e abre no Google Maps do celular ou do navegador
+(quando há mais de 10 paradas, a rota é dividida em trechos, porque esse é o
+limite de uma rota por link do Google).
+
+Se você quiser ver o mapa com a rota desenhada **dentro** da própria tela,
+cadastre a variável `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` nas "Environment
+Variables" com uma chave da [Maps Embed
+API](https://developers.google.com/maps/documentation/embed/get-api-key). O
+mapa embutido só aparece quando a chave existe **e** o ponto de partida está
+preenchido.
+
 ## Estrutura do projeto (para referência técnica)
 
 - `prisma/schema.prisma` — modelo do banco de dados (usuários, lojas,
   comissões, montagens).
 - `lib/auth.ts` — login, sessão e proteção de acesso por papel (admin/montador).
 - `lib/actions/` — as ações do sistema (criar montador, criar montagem,
-  marcar pagamento, etc).
-- `app/admin/` — todas as telas do painel do administrador.
+  marcar pagamento, enviar a conclusão ao CentralSync, etc).
+- `lib/financeiro.ts` — o percentual que a empresa cobra da loja e as contas
+  que dependem dele (usado no painel e no financeiro).
+- `lib/mapas.ts` — links de Google Maps/Waze de uma parada e a montagem da
+  rota com várias paradas.
+- `app/admin/` — todas as telas do painel do administrador (inclusive
+  `app/admin/rota`, a rota do dia).
 - `app/montador/` — todas as telas do painel do montador.
 - `components/` — componentes visuais reutilizados nas telas.

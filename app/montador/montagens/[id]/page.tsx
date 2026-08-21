@@ -17,13 +17,12 @@ import { EditarEnderecoCliente } from "@/components/EditarEnderecoCliente";
 import { EnviarAvaliacaoButton } from "@/components/EnviarAvaliacaoButton";
 import { Estrelas } from "@/components/Estrelas";
 import { CopiarTexto } from "@/components/CopiarTexto";
+import { linkMapa, linkWaze } from "@/lib/mapas";
 import {
   formatarData,
   formatarDataHora,
   formatarMoeda,
-  linkMapa,
   linkTelefone,
-  linkWaze,
   linkWhatsapp,
   OCORRENCIA_COLOR,
   OCORRENCIA_LABEL,
