@@ -2,9 +2,14 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { put } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getSession, requireAdmin } from "@/lib/auth";
+import {
+  enviarArquivo,
+  extensaoDe,
+  TAMANHO_MAXIMO_UPLOAD,
+  TAMANHO_MAXIMO_UPLOAD_TEXTO,
+} from "@/lib/upload";
 import { linkWhatsapp, OCORRENCIA_LABEL, paraNumeroBr } from "@/lib/format";
 import { pareceIdDoCentralSync } from "@/lib/centralsync";
 
@@ -51,33 +56,37 @@ function revalidarMontagem(id?: string) {
   }
 }
 
-const TAMANHO_MAXIMO_MANUAL = 20 * 1024 * 1024; // 20 MB
-
 // Manual/instrução que o admin anexa ao designar o montador — aceita
 // qualquer tipo de arquivo (imagem, PDF etc.), não só imagens como as
 // fotos de comprovante. Retorna undefined se nenhum arquivo novo foi
 // enviado (nesse caso o valor já salvo na montagem não é mexido).
+//
+// O limite aqui era de 20 MB, mas era mentira: o corpo de uma Server Action
+// para em 1 MB por padrão (agora 4 MB, ver next.config.ts) e o pedido era
+// recusado antes de chegar nesta função. Hoje o limite anunciado é o que
+// realmente passa, e as imagens ainda sobem reduzidas pelo navegador.
 async function processarManual(formData: FormData, caminhoErro: string) {
   const manual = formData.get("manual");
   if (!(manual instanceof File) || manual.size === 0) return undefined;
 
-  if (manual.size > TAMANHO_MAXIMO_MANUAL) {
+  if (manual.size > TAMANHO_MAXIMO_UPLOAD) {
     redirect(
       `${caminhoErro}?erro=${encodeURIComponent(
-        "O arquivo do manual é muito grande (máximo 20 MB)."
+        `O arquivo do manual é muito grande (máximo ${TAMANHO_MAXIMO_UPLOAD_TEXTO}).`
       )}`
     );
   }
 
-  const partesNome = manual.name.split(".");
-  const extensao = partesNome.length > 1 ? partesNome.pop() : "bin";
-  const blob = await put(`manuais/${Date.now()}.${extensao}`, manual, {
-    access: "public",
-    addRandomSuffix: true,
-  });
+  const envio = await enviarArquivo(
+    `manuais/${Date.now()}.${extensaoDe(manual, "bin")}`,
+    manual
+  );
+  if (!envio.ok) {
+    redirect(`${caminhoErro}?erro=${encodeURIComponent(envio.erro)}`);
+  }
 
   return {
-    manualUrl: blob.url,
+    manualUrl: envio.url,
     manualNomeArquivo: manual.name,
     manualTipo: manual.type || null,
   };
@@ -356,65 +365,92 @@ async function avisarCentralSync(
   }
 }
 
+// Salva o comprovante da montagem (foto do produto montado + assinaturas) e
+// marca como concluída. Usada pelos dois painéis:
+//
+// - Montador: é o fluxo normal do aplicativo, e exige a prova completa --
+//   foto, a assinatura dele e a do cliente.
+// - Admin: pode enviar ou trocar a foto de qualquer montagem. Isso não
+//   existia em tela nenhuma, e por isso as montagens feitas pela própria
+//   empresa (feitoPorAdm, sem montador designado) nunca conseguiam receber
+//   a foto: o dono não tem painel de montador, e esta ação recusava quem
+//   não fosse MONTADOR. Resultado: o botão "Enviar ao CentralSync" ficava
+//   travado para sempre, reclamando de uma foto que não havia como anexar.
+//   Para o admin as assinaturas são opcionais (em branco, mantém as que já
+//   estiverem salvas) -- muitas vezes o que falta é só a foto.
 export async function concluirComProvaAction(id: string, formData: FormData) {
-  const session = await getSession();
-  if (!session) redirect("/login");
-
-  // Só precisamos saber de quem é a montagem: o nome do montador só importa
-  // no envio ao CentralSync, que hoje acontece no painel do admin.
-  const montagem = await prisma.montagem.findUnique({
-    where: { id },
-    select: { montadorId: true },
-  });
-  if (!montagem) redirect("/montador");
-  if (session.role !== "MONTADOR" || montagem.montadorId !== session.sub) {
-    redirect("/montador");
-  }
+  const { session, montagem } = await podeGerenciar(id);
+  const caminho = caminhoDetalhe(session.role, id);
 
   const erro = (mensagem: string) =>
-    redirect(
-      `/montador/montagens/${id}?erro=${encodeURIComponent(mensagem)}`
-    );
+    redirect(`${caminho}?erro=${encodeURIComponent(mensagem)}`);
 
+  const exigirAssinaturas = session.role === "MONTADOR";
   const foto = formData.get("foto");
-  const assinaturaMontador = String(formData.get("assinaturaMontador") || "");
-  const assinaturaCliente = String(formData.get("assinaturaCliente") || "");
+  const assinaturaMontador = String(formData.get("assinaturaMontador") || "").trim();
+  const assinaturaCliente = String(formData.get("assinaturaCliente") || "").trim();
 
-  if (!(foto instanceof File) || foto.size === 0) {
-    erro("Tire uma foto do produto montado antes de concluir.");
+  const temFotoNova = foto instanceof File && foto.size > 0;
+  if (!temFotoNova && !montagem.fotoProdutoUrl) {
+    erro("Envie uma foto do produto montado antes de concluir.");
     return;
   }
-  if (!foto.type.startsWith("image/")) {
-    erro("O arquivo da foto precisa ser uma imagem.");
-    return;
+  if (temFotoNova) {
+    if (!foto.type.startsWith("image/")) {
+      erro("O arquivo da foto precisa ser uma imagem.");
+      return;
+    }
+    if (foto.size > TAMANHO_MAXIMO_UPLOAD) {
+      erro(
+        `A foto é muito grande (máximo ${TAMANHO_MAXIMO_UPLOAD_TEXTO}). Tire outra pelo próprio celular, que o sistema reduz sozinho.`
+      );
+      return;
+    }
   }
-  if (foto.size > 8 * 1024 * 1024) {
-    erro("A foto é muito grande (máximo 8 MB).");
-    return;
-  }
-  if (!assinaturaMontador.startsWith("data:image/")) {
+
+  // Assinatura em branco só é aceita quando já existe uma salva (o admin
+  // trocando só a foto, por exemplo). Nunca gravamos uma montagem concluída
+  // sem prova nenhuma pelo lado do montador.
+  if (!assinaturaMontador && !montagem.assinaturaMontador && exigirAssinaturas) {
     erro("Falta a sua assinatura.");
     return;
   }
-  if (!assinaturaCliente.startsWith("data:image/")) {
+  if (!assinaturaCliente && !montagem.assinaturaCliente && exigirAssinaturas) {
     erro("Falta a assinatura do cliente.");
     return;
   }
+  if (assinaturaMontador && !assinaturaMontador.startsWith("data:image/")) {
+    erro("Não consegui ler a assinatura de quem montou. Assine de novo.");
+    return;
+  }
+  if (assinaturaCliente && !assinaturaCliente.startsWith("data:image/")) {
+    erro("Não consegui ler a assinatura do cliente. Assine de novo.");
+    return;
+  }
 
-  const extensao = foto.type.split("/")[1] || "jpg";
-  const blob = await put(`montagens/${id}-${Date.now()}.${extensao}`, foto, {
-    access: "public",
-    addRandomSuffix: true,
-  });
+  let fotoUrl: string | undefined;
+  if (temFotoNova) {
+    const envio = await enviarArquivo(
+      `montagens/${id}-${Date.now()}.${extensaoDe(foto)}`,
+      foto
+    );
+    if (!envio.ok) {
+      erro(envio.erro);
+      return;
+    }
+    fotoUrl = envio.url;
+  }
+
+  const jaEstavaConcluida = montagem.status === "CONCLUIDO";
 
   await prisma.montagem.update({
     where: { id },
     data: {
       status: "CONCLUIDO",
-      concluidoEm: new Date(),
-      fotoProdutoUrl: blob.url,
-      assinaturaMontador,
-      assinaturaCliente,
+      concluidoEm: montagem.concluidoEm ?? new Date(),
+      ...(fotoUrl ? { fotoProdutoUrl: fotoUrl } : {}),
+      ...(assinaturaMontador ? { assinaturaMontador } : {}),
+      ...(assinaturaCliente ? { assinaturaCliente } : {}),
     },
   });
 
@@ -427,7 +463,13 @@ export async function concluirComProvaAction(id: string, formData: FormData) {
   // esperar a Cloud Function do CentralSync responder só pra ele conseguir
   // fechar a montagem era risco sem contrapartida.
   revalidarMontagem(id);
-  redirect(`/montador/montagens/${id}`);
+  redirect(
+    `${caminho}?sucesso=${encodeURIComponent(
+      jaEstavaConcluida
+        ? "Comprovante atualizado."
+        : "Montagem concluída. Foto e assinaturas salvas."
+    )}`
+  );
 }
 
 // Único caminho pelo qual uma conclusão sai daqui para o CentralSync,
@@ -547,15 +589,18 @@ export async function registrarOcorrenciaAction(
     if (!foto.type.startsWith("image/")) {
       return { ok: false, erro: "O arquivo da foto precisa ser uma imagem." };
     }
-    if (foto.size > 8 * 1024 * 1024) {
-      return { ok: false, erro: "A foto é muito grande (máximo 8 MB)." };
+    if (foto.size > TAMANHO_MAXIMO_UPLOAD) {
+      return {
+        ok: false,
+        erro: `A foto é muito grande (máximo ${TAMANHO_MAXIMO_UPLOAD_TEXTO}).`,
+      };
     }
-    const extensao = foto.type.split("/")[1] || "jpg";
-    const blob = await put(`ocorrencias/${id}-${Date.now()}.${extensao}`, foto, {
-      access: "public",
-      addRandomSuffix: true,
-    });
-    fotoUrl = blob.url;
+    const envio = await enviarArquivo(
+      `ocorrencias/${id}-${Date.now()}.${extensaoDe(foto)}`,
+      foto
+    );
+    if (!envio.ok) return { ok: false, erro: envio.erro };
+    fotoUrl = envio.url;
   }
 
   await prisma.$transaction([

@@ -181,7 +181,8 @@ export default async function AdminDashboardPage({
                     </p>
                     {m.fotoProdutoUrl ? null : (
                       <p className="text-xs font-medium text-amber-700">
-                        Sem foto e assinaturas — não dá para enviar ainda.
+                        Sem foto do produto montado — abra a montagem para
+                        anexar antes de enviar.
                       </p>
                     )}
                   </div>

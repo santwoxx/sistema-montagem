@@ -22,6 +22,10 @@ individual para cada montador.
   ele por WhatsApp.
 - Controla os pagamentos: se a loja já pagou a empresa e se o montador já
   recebeu sua comissão.
+- Anexa o comprovante de qualquer montagem (foto do produto montado e, se
+  quiser, as assinaturas), no card "Comprovante de conclusão" da tela da
+  montagem. É por aí que entram as fotos das montagens feitas pela própria
+  empresa, que não têm montador para enviar pelo aplicativo.
 - Tem uma tela financeira com totais por mês, por loja e por montador.
 
 **Painel do montador**
@@ -30,6 +34,10 @@ individual para cada montador.
   mapa), telefone (com botão de ligar e de WhatsApp), o serviço a ser feito
   e o valor da sua comissão.
 - Pode marcar a montagem como "iniciada" e depois "concluída".
+- Ao concluir, envia o comprovante do serviço: foto do produto montado (tirada
+  na hora ou escolhida da galeria) mais a assinatura dele e a do cliente. As
+  fotos são reduzidas no próprio celular antes de subir, então funcionam mesmo
+  com internet fraca.
 - Tem uma tela financeira própria mostrando quanto já ganhou, quanto está
   pendente de pagamento e o histórico de montagens concluídas.
 
@@ -136,6 +144,22 @@ conectando um repositório do GitHub. As mesmas variáveis `DATABASE_URL`,
 (ex: `seusistema.vercel.app`) já funciona tanto para o admin quanto para os
 montadores, em qualquer dispositivo com internet.
 
+### Armazenamento das fotos (obrigatório)
+
+As fotos (produto montado, ocorrência, perfil) e os manuais não ficam no banco
+— ficam no **Vercel Blob**. No painel do Vercel, aba **Storage**, crie um Blob
+Store e conecte ao projeto. Isso cadastra sozinho a variável
+`BLOB_READ_WRITE_TOKEN`; se estiver rodando fora do Vercel, copie essa variável
+para o `.env`.
+
+Sem essa variável **nenhuma foto sobe**: o sistema avisa na tela que o
+armazenamento não está configurado (antes disso a tela simplesmente quebrava,
+sem dizer o motivo).
+
+Cada arquivo enviado pode ter até **3 MB**. As fotos são reduzidas no navegador
+antes de subir, então na prática nunca chegam perto disso; o limite pesa mesmo
+é para PDF de manual, que precisa ser enviado já reduzido.
+
 ## Integração com o CentralSync (loja Central Móveis)
 
 O CentralSync é o sistema da loja. A ligação entre os dois é de mão dupla:
@@ -161,7 +185,10 @@ O CentralSync é o sistema da loja. A ligação entre os dois é de mão dupla:
    Se faltar a foto ou alguma assinatura (por exemplo, quando a montagem foi
    marcada como concluída direto pelo painel, sem passar pelo aplicativo do
    montador), o envio é recusado com o aviso do que está faltando — em vez de
-   mandar um comprovante vazio para a loja.
+   mandar um comprovante vazio para a loja. Nesse caso, use o card
+   "Comprovante de conclusão" na tela da montagem para anexar o que falta: ele
+   aceita a foto e as assinaturas de qualquer montagem, inclusive das feitas
+   pela própria empresa.
 
 Para isso funcionar, além das variáveis do banco, o projeto precisa de duas
 chaves nas "Environment Variables":

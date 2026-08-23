@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { Alerta, Button, Field, Select, Textarea } from "@/components/ui";
+import { comprimirImagem } from "@/lib/imagem";
 
 const OPCOES = [
   { valor: "CLIENTE_AUSENTE", label: "Cliente ausente" },
@@ -33,7 +34,21 @@ export function RegistrarOcorrenciaForm({
     const formData = new FormData(e.currentTarget);
 
     startTransition(async () => {
-      const resultado = await action(formData);
+      // A foto vai reduzida: a original do celular passa de 2 MB e estoura o
+      // limite de tamanho da Server Action, derrubando o envio inteiro.
+      const foto = formData.get("foto");
+      if (foto instanceof File && foto.size > 0) {
+        formData.set("foto", await comprimirImagem(foto));
+      }
+
+      let resultado: Resultado;
+      try {
+        resultado = await action(formData);
+      } catch (e) {
+        console.error("Falha ao registrar a ocorrência:", e);
+        setErro("Não consegui enviar agora. Confira a internet e tente de novo.");
+        return;
+      }
       if (!resultado.ok) {
         setErro(resultado.erro);
         return;
@@ -116,7 +131,6 @@ export function RegistrarOcorrenciaForm({
               type="file"
               name="foto"
               accept="image/*"
-              capture="environment"
               className="w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-navy file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-navy-light"
             />
           </div>

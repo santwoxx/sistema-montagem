@@ -2,9 +2,14 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { put } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { createSession, requireMontador } from "@/lib/auth";
+import {
+  enviarArquivo,
+  extensaoDe,
+  TAMANHO_MAXIMO_UPLOAD,
+  TAMANHO_MAXIMO_UPLOAD_TEXTO,
+} from "@/lib/upload";
 
 export async function atualizarPerfilAction(formData: FormData) {
   const session = await requireMontador();
@@ -27,16 +32,19 @@ export async function atualizarPerfilAction(formData: FormData) {
       erro("O arquivo da foto precisa ser uma imagem.");
       return;
     }
-    if (foto.size > 5 * 1024 * 1024) {
-      erro("A foto é muito grande (máximo 5 MB).");
+    if (foto.size > TAMANHO_MAXIMO_UPLOAD) {
+      erro(`A foto é muito grande (máximo ${TAMANHO_MAXIMO_UPLOAD_TEXTO}).`);
       return;
     }
-    const extensao = foto.type.split("/")[1] || "jpg";
-    const blob = await put(`perfis/${session.sub}-${Date.now()}.${extensao}`, foto, {
-      access: "public",
-      addRandomSuffix: true,
-    });
-    fotoUrl = blob.url;
+    const envio = await enviarArquivo(
+      `perfis/${session.sub}-${Date.now()}.${extensaoDe(foto)}`,
+      foto
+    );
+    if (!envio.ok) {
+      erro(envio.erro);
+      return;
+    }
+    fotoUrl = envio.url;
   }
 
   await prisma.user.update({

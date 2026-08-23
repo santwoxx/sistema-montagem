@@ -4,6 +4,7 @@ import { useState, type ChangeEvent } from "react";
 import { Field, Input } from "@/components/ui";
 import { Avatar } from "@/components/Avatar";
 import { SubmitButton } from "@/components/SubmitButton";
+import { comprimirImagem, trocarArquivoDoInput } from "@/lib/imagem";
 
 export function PerfilMontadorForm({
   action,
@@ -17,14 +18,33 @@ export function PerfilMontadorForm({
   fotoAtualUrl: string | null;
 }) {
   const [preview, setPreview] = useState<string | null>(fotoAtualUrl);
+  const [preparando, setPreparando] = useState(false);
 
-  function aoEscolherFoto(e: ChangeEvent<HTMLInputElement>) {
-    const arquivo = e.target.files?.[0];
-    if (arquivo) setPreview(URL.createObjectURL(arquivo));
+  async function aoEscolherFoto(e: ChangeEvent<HTMLInputElement>) {
+    const input = e.currentTarget;
+    const arquivo = input.files?.[0];
+    if (!arquivo) return;
+    setPreview(URL.createObjectURL(arquivo));
+
+    // Troca a foto original pela versão reduzida antes do envio: a original
+    // do celular não cabe no limite de tamanho de uma Server Action.
+    setPreparando(true);
+    try {
+      const menor = await comprimirImagem(arquivo, { ladoMaximo: 800 });
+      if (menor !== arquivo) trocarArquivoDoInput(input, menor);
+    } finally {
+      setPreparando(false);
+    }
   }
 
   return (
-    <form action={action} className="space-y-5">
+    <form
+      action={action}
+      onSubmit={(e) => {
+        if (preparando) e.preventDefault();
+      }}
+      className="space-y-5"
+    >
       <div className="flex items-center gap-4">
         <div className="relative shrink-0">
           <Avatar nome={nomeAtual} fotoUrl={preview} tamanho="h-20 w-20 text-xl" />
@@ -40,7 +60,9 @@ export function PerfilMontadorForm({
           </label>
         </div>
         <p className="text-sm text-slate-500">
-          Clique no ícone da câmera para trocar sua foto.
+          {preparando
+            ? "Preparando a foto…"
+            : "Clique no ícone da câmera para trocar sua foto."}
         </p>
       </div>
 

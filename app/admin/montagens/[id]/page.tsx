@@ -7,6 +7,7 @@ import {
   alternarPagamentoMontadorAction,
   excluirMontagemAction,
   confirmarEnvioCentralSyncAction,
+  concluirComProvaAction,
 } from "@/lib/actions/montagens";
 import { pareceIdDoCentralSync } from "@/lib/centralsync";
 import { linkMapa, linkWaze } from "@/lib/mapas";
@@ -15,6 +16,7 @@ import { Alerta, Badge, Button, Card, PageHeader } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
 import { NovaMontagemForm } from "@/components/NovaMontagemForm";
 import { FormConfirmar } from "@/components/FormConfirmar";
+import { ComprovanteAdmin } from "@/components/ComprovanteAdmin";
 import { Estrelas } from "@/components/Estrelas";
 import {
   formatarData,
@@ -170,45 +172,59 @@ export default async function MontagemDetalhePage({
         </Card>
       </div>
 
-      {montagem.fotoProdutoUrl || montagem.assinaturaMontador || montagem.assinaturaCliente ? (
-        <Card className="mb-6">
-          <p className="mb-3 text-sm font-medium text-slate-500">
-            Comprovante de conclusão
+      <Card className="mb-6">
+        <p className="mb-3 text-sm font-medium text-slate-500">
+          Comprovante de conclusão
+        </p>
+        {montagem.fotoProdutoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={montagem.fotoProdutoUrl}
+            alt="Foto do produto montado"
+            className="mb-4 max-h-96 w-full rounded-xl border border-slate-200 object-contain"
+          />
+        ) : (
+          <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
+            Ainda não há foto do produto montado nesta montagem.
+            {montagem.feitoPorAdm
+              ? " Como o serviço foi feito pela própria empresa, é por aqui que a foto entra."
+              : " Quem montou pode enviar pelo aplicativo, ou você mesmo anexa por aqui."}
           </p>
-          {montagem.fotoProdutoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={montagem.fotoProdutoUrl}
-              alt="Foto do produto montado"
-              className="mb-4 max-h-96 w-full rounded-xl border border-slate-200 object-contain"
-            />
-          ) : null}
-          <div className="grid gap-4 sm:grid-cols-2">
-            {montagem.assinaturaMontador ? (
-              <div>
-                <p className="mb-1 text-xs text-slate-500">Assinatura do montador</p>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={montagem.assinaturaMontador}
-                  alt="Assinatura do montador"
-                  className="w-full rounded-lg border border-slate-200 bg-white"
-                />
-              </div>
-            ) : null}
-            {montagem.assinaturaCliente ? (
-              <div>
-                <p className="mb-1 text-xs text-slate-500">Assinatura do cliente</p>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={montagem.assinaturaCliente}
-                  alt="Assinatura do cliente"
-                  className="w-full rounded-lg border border-slate-200 bg-white"
-                />
-              </div>
-            ) : null}
-          </div>
-        </Card>
-      ) : null}
+        )}
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          {montagem.assinaturaMontador ? (
+            <div>
+              <p className="mb-1 text-xs text-slate-500">Assinatura de quem montou</p>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={montagem.assinaturaMontador}
+                alt="Assinatura de quem montou"
+                className="w-full rounded-lg border border-slate-200 bg-white"
+              />
+            </div>
+          ) : (
+            <p className="text-xs text-slate-500">Sem a assinatura de quem montou.</p>
+          )}
+          {montagem.assinaturaCliente ? (
+            <div>
+              <p className="mb-1 text-xs text-slate-500">Assinatura do cliente</p>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={montagem.assinaturaCliente}
+                alt="Assinatura do cliente"
+                className="w-full rounded-lg border border-slate-200 bg-white"
+              />
+            </div>
+          ) : (
+            <p className="text-xs text-slate-500">Sem a assinatura do cliente.</p>
+          )}
+        </div>
+        <ComprovanteAdmin
+          action={concluirComProvaAction.bind(null, montagem.id)}
+          jaTemFoto={Boolean(montagem.fotoProdutoUrl)}
+          concluida={montagem.status === "CONCLUIDO"}
+        />
+      </Card>
 
       {pareceIdDoCentralSync(montagem.numeroPedido) ? (
         <Card className="mb-6 border-blue-100">

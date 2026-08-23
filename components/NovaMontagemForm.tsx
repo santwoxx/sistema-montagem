@@ -8,6 +8,11 @@ import { NotasPendentesCard, type NotaPendenteResumo } from "@/components/NotasP
 import { resolverOuCriarLojaAction, type ResultadoResolucaoLoja } from "@/lib/actions/importar";
 import { pareceIdDoCentralSync } from "@/lib/centralsync";
 import { formatarMoeda, paraInputDate, paraNumeroBr } from "@/lib/format";
+import { comprimirImagem, trocarArquivoDoInput } from "@/lib/imagem";
+
+// Mesmo teto do servidor (lib/upload.ts): acima disso o Next recusa o envio
+// inteiro, então é melhor avisar aqui, com o arquivo ainda na tela.
+const TAMANHO_MAXIMO_MANUAL = 3 * 1024 * 1024;
 
 // Comissão combinada à parte com o CentralSync — sempre 8% de montagem e 1%
 // de assistência nos pedidos vindos de lá, independente do que a loja ou a
@@ -73,6 +78,34 @@ export function NovaMontagemForm({
   const [dataAgendada, setDataAgendada] = useState(valoresIniciais?.dataAgendada ?? "");
   const [observacoes, setObservacoes] = useState(valoresIniciais?.observacoes ?? "");
   const [notaPendenteId, setNotaPendenteId] = useState("");
+  const [manualPreparando, setManualPreparando] = useState(false);
+  const [manualAviso, setManualAviso] = useState<string | null>(null);
+
+  async function aoEscolherManual(e: React.ChangeEvent<HTMLInputElement>) {
+    const input = e.currentTarget;
+    const arquivo = input.files?.[0];
+    setManualAviso(null);
+    if (!arquivo) return;
+
+    // Foto de manual costuma ter texto miúdo, então reduz menos que as
+    // fotos de comprovante — o montador precisa conseguir ler.
+    if (arquivo.type.startsWith("image/")) {
+      setManualPreparando(true);
+      try {
+        const menor = await comprimirImagem(arquivo, { ladoMaximo: 2200, qualidade: 0.85 });
+        if (menor !== arquivo) trocarArquivoDoInput(input, menor);
+      } finally {
+        setManualPreparando(false);
+      }
+    }
+
+    const final = input.files?.[0];
+    if (final && final.size > TAMANHO_MAXIMO_MANUAL) {
+      setManualAviso(
+        "Este arquivo passa de 3 MB e não vai subir. Envie um PDF menor (ou uma foto das páginas que interessam)."
+      );
+    }
+  }
 
   // Compartilhado entre a importação por OCR/XML e as notas pendentes do
   // CentralSync: seleciona a loja resolvida/recém-cadastrada e garante que
@@ -181,7 +214,15 @@ export function NovaMontagemForm({
   }, [valorServicoCalculado, percentualAssistencia]);
 
   return (
-    <form action={action} className="space-y-6">
+    <form
+      action={action}
+      onSubmit={(e) => {
+        // Não deixa enviar enquanto a imagem do manual ainda está sendo
+        // reduzida (subiria a original e estouraria o limite da action).
+        if (manualPreparando) e.preventDefault();
+      }}
+      className="space-y-6"
+    >
       <input type="hidden" name="notaPendenteId" value={notaPendenteId} />
 
       {!modoEdicao && notasPendentes && notasPendentes.length > 0 ? (
@@ -253,14 +294,21 @@ export function NovaMontagemForm({
         <div className="mt-4">
           <Field
             label="Manual / instrução para o montador (opcional)"
-            hint="Imagem, PDF ou outro arquivo — o montador vê isso na tela da montagem."
+            hint="Imagem, PDF ou outro arquivo, até 3 MB — o montador vê isso na tela da montagem."
           >
             <input
               type="file"
               name="manual"
+              onChange={aoEscolherManual}
               className="w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-gold file:px-4 file:py-2 file:text-sm file:font-medium file:text-navy hover:file:bg-gold-hover"
             />
           </Field>
+          {manualPreparando ? (
+            <p className="mt-2 text-sm text-slate-500">Preparando o arquivo…</p>
+          ) : null}
+          {manualAviso ? (
+            <p className="mt-2 text-sm font-medium text-red-600">{manualAviso}</p>
+          ) : null}
           {valoresIniciais?.manualUrl ? (
             <p className="mt-2 text-sm text-slate-500">
               Arquivo atual:{" "}

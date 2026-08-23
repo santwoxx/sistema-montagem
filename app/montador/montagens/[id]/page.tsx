@@ -49,6 +49,13 @@ export default async function MontagemDetalheMontadorPage({
   if (!montagem) notFound();
   if (montagem.montadorId !== session.sub) redirect("/montador");
 
+  const emAndamento = montagem.status === "EM_ANDAMENTO";
+  // Montagem que já foi dada como concluída mas ficou sem a foto (o admin
+  // marcou o status na mão, ou o envio falhou lá atrás) continua podendo
+  // receber o comprovante — sem isso o montador perdia o formulário e a
+  // loja nunca recebia a prova do serviço.
+  const faltaComprovante = montagem.status === "CONCLUIDO" && !montagem.fotoProdutoUrl;
+
   return (
     <div>
       <p className="mb-2">
@@ -208,21 +215,33 @@ export default async function MontagemDetalheMontadorPage({
           </form>
         ) : null}
 
-        {montagem.status === "EM_ANDAMENTO" ? (
+        {emAndamento || faltaComprovante ? (
           <Card>
             <p className="mb-1 text-base font-semibold text-slate-900">
-              Concluir montagem
+              {faltaComprovante ? "Falta o comprovante" : "Concluir montagem"}
             </p>
             <p className="mb-4 text-sm text-slate-500">
-              Tire uma foto do produto montado e colete as assinaturas suas e do
-              cliente para finalizar.
+              {faltaComprovante
+                ? "Esta montagem está marcada como concluída, mas sem a foto do produto montado — a loja precisa dela para conferir o serviço."
+                : "Tire uma foto do produto montado e colete as assinaturas suas e do cliente para finalizar."}
             </p>
-            <ConcluirMontagemForm action={concluirComProvaAction.bind(null, montagem.id)} />
-            <div className="mt-5 border-t border-slate-100 pt-4">
-              <RegistrarOcorrenciaForm
-                action={registrarOcorrenciaAction.bind(null, montagem.id)}
-              />
-            </div>
+            <ConcluirMontagemForm
+              action={concluirComProvaAction.bind(null, montagem.id)}
+              exigirAssinaturas={
+                emAndamento ||
+                !montagem.assinaturaMontador ||
+                !montagem.assinaturaCliente
+              }
+              jaTemFoto={Boolean(montagem.fotoProdutoUrl)}
+              rotuloBotao={faltaComprovante ? "Enviar comprovante" : "Concluir montagem"}
+            />
+            {emAndamento ? (
+              <div className="mt-5 border-t border-slate-100 pt-4">
+                <RegistrarOcorrenciaForm
+                  action={registrarOcorrenciaAction.bind(null, montagem.id)}
+                />
+              </div>
+            ) : null}
           </Card>
         ) : null}
 
