@@ -7,6 +7,21 @@ import { normalizarCnpj } from "@/lib/cnpj";
 // Montagem de verdade — só deixa o pedido em "Notas pendentes" (ver
 // app/admin/montagens/nova) até um admin revisar, completar loja/valor e
 // clicar em salvar. Protegido por uma chave compartilhada, não por sessão.
+//
+// `valorServico` aqui NÃO é o total da nota do cliente: o CentralSync manda
+// a base do acerto de montagem, ou seja, só os itens que o cliente comprou
+// com montagem, sem frete e sem a taxa de montagem que a loja cobrou dele.
+// É sobre esse número que os percentuais são aplicados dos dois lados (8% de
+// comissão + 2% de assistência), e é o que faz a cobrança daqui bater com o
+// relatório de montagens de lá. O total da nota vem em `observacoes`, para
+// conferência. Não "corrija" isto para o valor cheio sem alinhar o
+// CentralSync junto.
+//
+// `numeroPedido` no formato "del-..." identifica montagem vinda do
+// CentralSync (ver lib/centralsync.ts). Desmontagens chegam com prefixo
+// "DESM-" de propósito: elas não podem casar com essa checagem, senão
+// receberiam a comissão de montagem e liberariam o botão de avisar a
+// conclusão, que marcaria a entrega original como montada de novo.
 
 const ALLOWED_ORIGIN = "https://centralsync.vercel.app";
 const TAMANHO_MAXIMO_CAMPO = 300;

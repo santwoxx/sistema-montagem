@@ -14,11 +14,23 @@ import { comprimirImagem, trocarArquivoDoInput } from "@/lib/imagem";
 // inteiro, então é melhor avisar aqui, com o arquivo ainda na tela.
 const TAMANHO_MAXIMO_MANUAL = 3 * 1024 * 1024;
 
-// Comissão combinada à parte com o CentralSync — sempre 8% de montagem e 1%
+// Comissão combinada à parte com o CentralSync — sempre 8% de montagem e 2%
 // de assistência nos pedidos vindos de lá, independente do que a loja ou a
 // tabela de comissão por montador (ComissaoLoja/comissaoPadrao) diriam.
+//
+// Estes dois números são metade de um acerto que vive nos dois sistemas: o
+// CentralSync calcula a despesa de montagem dele com os mesmos 8% + 2%
+// (DARIO_COMMISSION_PERCENT / DARIO_ASSISTANCE_PERCENT em
+// config/darioMontador.ts, no outro repositório). Estava 1% aqui e 2% lá,
+// então o que a Central Móveis era cobrada nunca batia com o relatório dela.
+// Mexer em um lado sem o outro traz a divergência de volta.
+//
+// A base já vem certa de lá: o CentralSync manda em `valorServico` só o
+// valor dos itens que o cliente comprou COM montagem (sem frete e sem a taxa
+// de montagem que a loja cobrou), não o total da nota -- o total vai nas
+// observações da nota pendente, para conferência.
 const COMISSAO_MONTADOR_CENTRALSYNC = "8";
-const COMISSAO_ASSISTENCIA_CENTRALSYNC = "1";
+const COMISSAO_ASSISTENCIA_CENTRALSYNC = "2";
 
 type Loja = { id: string; nome: string; percentualAssistencia?: number };
 type Montador = { id: string; nome: string; comissaoPadrao?: number };
@@ -162,7 +174,7 @@ export function NovaMontagemForm({
     }
 
     // Pedido do CentralSync: sobrepõe o que veio da loja/tabela de comissão
-    // acima com a taxa fixa combinada (8% montagem + 1% assistência), a não
+    // acima com a taxa fixa combinada (8% montagem + 2% assistência), a não
     // ser que o admin já tenha ajustado esses campos manualmente antes de
     // usar a nota.
     if (pareceIdDoCentralSync(nota.numeroPedido)) {
