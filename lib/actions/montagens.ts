@@ -335,7 +335,8 @@ async function avisarCentralSync(
   montadorNome: string | null,
   assemblerSignature: string,
   customerSignature: string,
-  photo: string
+  photo: string,
+  reason?: string
 ): Promise<boolean> {
   if (!CENTRALSYNC_SHARED_KEY) {
     console.warn("MONTAFACIL_TO_CENTRALSYNC_KEY não configurada -- não é possível avisar o CentralSync.");
@@ -348,7 +349,14 @@ async function avisarCentralSync(
         "Content-Type": "application/json",
         "x-montafacil-key": CENTRALSYNC_SHARED_KEY,
       },
-      body: JSON.stringify({ deliveryId, montadorNome, assemblerSignature, customerSignature, photo }),
+      body: JSON.stringify({
+        deliveryId,
+        montadorNome,
+        assemblerSignature,
+        customerSignature,
+        photo,
+        ...(reason ? { reason } : {}),
+      }),
       // Quem espera por esta chamada é o admin, na tela da montagem. Um
       // CentralSync fora do ar não pode deixar a tela travada: desiste em
       // 10s e o admin tenta de novo pelo mesmo botão.
@@ -484,7 +492,8 @@ export async function concluirComProvaAction(id: string, formData: FormData) {
 // quem clica, e não dá para forjar um destino de redirecionamento.
 export async function confirmarEnvioCentralSyncAction(
   id: string,
-  origem: "painel" | "montagem"
+  origem: "painel" | "montagem",
+  formData?: FormData
 ) {
   await requireAdmin();
 
@@ -507,6 +516,8 @@ export async function confirmarEnvioCentralSyncAction(
     return;
   }
 
+  const motivo = formData ? String(formData.get("motivoSemComprovante") || "").trim() : "";
+
   // A loja confere justamente a foto e as duas assinaturas. Mandar isso
   // vazio criava um aviso inútil do outro lado -- e marcava a montagem como
   // já enviada aqui, escondendo o problema.
@@ -516,9 +527,9 @@ export async function confirmarEnvioCentralSyncAction(
     montagem.assinaturaCliente ? null : "a assinatura do cliente",
   ].filter((item): item is string => item !== null);
 
-  if (faltando.length > 0) {
+  if (faltando.length > 0 && !motivo) {
     comErro(
-      `Falta ${faltando.join(", ")} para enviar ao CentralSync. Peça para quem montou concluir a montagem pelo aplicativo (foto + assinaturas).`
+      `Falta ${faltando.join(", ")} para enviar ao CentralSync. Anexe-os ou informe um motivo na tela da montagem para enviar sem eles.`
     );
     return;
   }
@@ -526,9 +537,10 @@ export async function confirmarEnvioCentralSyncAction(
   const sucesso = await avisarCentralSync(
     montagem.numeroPedido,
     montagem.montador?.nome ?? null,
-    montagem.assinaturaMontador!,
-    montagem.assinaturaCliente!,
-    montagem.fotoProdutoUrl!
+    montagem.assinaturaMontador || "",
+    montagem.assinaturaCliente || "",
+    montagem.fotoProdutoUrl || "",
+    motivo || undefined
   );
 
   if (!sucesso) {

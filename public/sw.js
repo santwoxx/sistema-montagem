@@ -11,6 +11,10 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
+  if (event.request.method !== "GET") {
+    return;
+  }
+  
   // Passa direto para a rede (sem cache customizado por enquanto), mas
   // precisa chamar respondWith: um handler vazio é tratado como no-op
   // pelo navegador e adiciona overhead a cada navegação sem benefício.
