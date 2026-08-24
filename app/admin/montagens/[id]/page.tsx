@@ -255,7 +255,20 @@ export default async function MontagemDetalhePage({
                 . Confira a foto e as assinaturas acima — o CentralSync só recebe
                 a conclusão quando você enviar daqui.
               </p>
-              <form action={confirmarEnvioCentralSyncAction.bind(null, montagem.id, "montagem")}>
+              <form action={confirmarEnvioCentralSyncAction.bind(null, montagem.id, "montagem")} className="space-y-3">
+                {(!montagem.fotoProdutoUrl || !montagem.assinaturaMontador || !montagem.assinaturaCliente) && (
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-slate-700">
+                      Falta comprovante (foto/assinaturas)? Informe o motivo para enviar assim mesmo:
+                    </label>
+                    <input
+                      type="text"
+                      name="motivoSemComprovante"
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-navy focus:outline-none focus:ring-1 focus:ring-navy"
+                      placeholder="Ex: Serviço refeito pelo dono, peça danificada, etc."
+                    />
+                  </div>
+                )}
                 <SubmitButton pendingText="Enviando…">Enviar ao CentralSync</SubmitButton>
               </form>
             </>
