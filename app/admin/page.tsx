@@ -4,8 +4,17 @@ import { confirmarEnvioCentralSyncAction } from "@/lib/actions/montagens";
 import { PREFIXO_PEDIDO_CENTRALSYNC } from "@/lib/centralsync";
 import { valorDevidoPelaLoja } from "@/lib/financeiro";
 import { formatarData, formatarDataHora, formatarMoeda, STATUS_COLOR, STATUS_LABEL } from "@/lib/format";
+import { inicioDoMesLocal } from "@/lib/datas";
 import { Alerta, Badge, Card, LinkButton, PageHeader, StatCard, Vazio } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
+
+// Teto de tempo das Server Actions desta página (a plataforma lê isto do
+// build). O envio ao CentralSync espera uma Cloud Function que quase sempre
+// parte fria e tenta duas vezes (ver avisarCentralSync): com o teto padrão
+// de 10s da Vercel, a função era cortada no meio e o admin recebia um erro
+// da plataforma, sem a mensagem explicando o que houve. 60s é o máximo
+// aceito em qualquer plano, e só é usado se a chamada realmente demorar.
+export const maxDuration = 60;
 
 // Quantas montagens da fila do CentralSync a tela lista de uma vez.
 const LIMITE_FILA = 10;
@@ -17,9 +26,9 @@ export default async function AdminDashboardPage({
 }) {
   const { erro, sucesso } = await searchParams;
 
-  const inicioMes = new Date();
-  inicioMes.setDate(1);
-  inicioMes.setHours(0, 0, 0, 0);
+  // setHours() usaria o fuso do servidor (UTC na Vercel), começando o mês
+  // às 21h do último dia do mês anterior no horário de Itabuna.
+  const inicioMes = inicioDoMesLocal();
 
   const [
     pendentes,
@@ -61,18 +70,29 @@ export default async function AdminDashboardPage({
       },
       orderBy: [{ dataAgendada: "asc" }, { createdAt: "desc" }],
       take: 6,
-      include: { loja: true, montador: true },
+      select: {
+        id: true,
+        clienteNome: true,
+        dataAgendada: true,
+        status: true,
+        loja: { select: { nome: true } },
+        montador: { select: { nome: true } },
+      },
     }),
     prisma.notaPendente.count(),
     // Fila de montagens do CentralSync já concluídas aqui e ainda não
     // enviadas para a loja. As assinaturas ficam de fora do select de
     // propósito: são imagens em base64 (campos Text grandes) e aqui só
-    // precisamos saber se o comprovante existe — a foto já responde isso,
-    // porque a conclusão pelo app do montador grava as três coisas juntas.
+    // interessa se existem, não o conteúdo — quem responde isso é a
+    // consulta `filaComAssinaturas` logo abaixo, que devolve só ids.
     prisma.montagem.findMany({
       where: {
         status: "CONCLUIDO",
-        numeroPedido: { startsWith: PREFIXO_PEDIDO_CENTRALSYNC },
+        // "insensitive" para casar com pareceIdDoCentralSync
+        // (lib/centralsync.ts). Se a fila daqui e a checagem de lá
+        // discordarem, a montagem some do painel mesmo com o botão da tela
+        // dela funcionando -- ou aparece aqui e o clique volta com erro.
+        numeroPedido: { startsWith: PREFIXO_PEDIDO_CENTRALSYNC, mode: "insensitive" },
         notificadoCentralSyncEm: null,
       },
       orderBy: { concluidoEm: "asc" },
@@ -92,6 +112,26 @@ export default async function AdminDashboardPage({
 
   const filaVisivel = filaCentralSync.slice(0, LIMITE_FILA);
   const temMaisNaFila = filaCentralSync.length > LIMITE_FILA;
+
+  // Quais dessas montagens têm as duas assinaturas.
+  //
+  // A tela liberava o botão "Enviar ao CentralSync" só de existir a foto,
+  // mas a ação também exige as duas assinaturas -- então uma montagem
+  // concluída pelo painel (sem passar pelo app do montador) mostrava o
+  // botão, e o clique voltava com erro. Aqui a pergunta é respondida sem
+  // carregar as imagens: a consulta filtra por "não nulo" e devolve só ids.
+  const idsDaFila = filaVisivel.map((m) => m.id);
+  const filaComAssinaturas = idsDaFila.length
+    ? await prisma.montagem.findMany({
+        where: {
+          id: { in: idsDaFila },
+          assinaturaMontador: { not: null },
+          assinaturaCliente: { not: null },
+        },
+        select: { id: true },
+      })
+    : [];
+  const temAssinaturas = new Set(filaComAssinaturas.map((m) => m.id));
 
   const aReceberDasLojas = valorDevidoPelaLoja({
     valorServico: aReceberAgg._sum.valorServico || 0,
@@ -179,16 +219,20 @@ export default async function AdminDashboardPage({
                     <p className="truncate text-xs text-slate-400">
                       Entrega {m.numeroPedido}
                     </p>
-                    {m.fotoProdutoUrl ? null : (
+                    {m.fotoProdutoUrl && temAssinaturas.has(m.id) ? null : (
                       <p className="text-xs font-medium text-amber-700">
-                        Sem foto do produto montado — abra a montagem para
-                        anexar antes de enviar.
+                        {!m.fotoProdutoUrl && !temAssinaturas.has(m.id)
+                          ? "Sem a foto e sem as assinaturas"
+                          : !m.fotoProdutoUrl
+                            ? "Sem foto do produto montado"
+                            : "Sem as assinaturas"}{" "}
+                        — abra a montagem para anexar antes de enviar.
                       </p>
                     )}
                   </div>
                 </div>
                 <div className="flex shrink-0 gap-2">
-                  {m.fotoProdutoUrl ? (
+                  {m.fotoProdutoUrl && temAssinaturas.has(m.id) ? (
                     <form action={confirmarEnvioCentralSyncAction.bind(null, m.id, "painel")}>
                       <SubmitButton className="px-3 py-2 text-sm" pendingText="Enviando…">
                         Enviar ao CentralSync

@@ -51,11 +51,10 @@ Pré-requisitos:
   `DATABASE_URL` e `DIRECT_URL`.
 
 ```bash
-cd sistema-montador
 npm install                       # instala as dependências (só precisa fazer uma vez)
-npx prisma migrate deploy         # cria as tabelas no banco (só precisa fazer uma vez)
+npm run db:migrate                # cria as tabelas no banco (só precisa fazer uma vez)
 npm run db:seed                   # cria o usuário administrador padrão
-npm run dev                        # inicia o sistema
+npm run dev                       # inicia o sistema
 ```
 
 Depois abra **http://localhost:3000** no navegador.
@@ -134,15 +133,44 @@ npx prisma studio
 backups automáticos, mas vale a pena checar as opções de backup do provedor
 escolhido — é lá que fica todo o histórico financeiro da empresa.
 
+## Conferindo o sistema antes de publicar
+
+```bash
+npm test        # testes das regras de negócio, datas e leitura de nota fiscal
+npm run lint    # confere o padrão do código
+npm run build   # compila tudo, como o Vercel faz
+```
+
+Os testes (pasta `testes/`) cobrem a parte do sistema que não depende de
+banco nem de tela: as contas de dinheiro, os limites de mês e de dia no fuso
+de Itabuna, a leitura do XML da nota e do texto lido por OCR do DANFE, e as
+validações do que chega de fora. É por eles que se percebe uma quebra antes
+de ela chegar no celular de quem está na rua.
+
+## Sobre datas e fuso horário
+
+O servidor do Vercel roda em UTC, três horas à frente de Itabuna. Para o mês
+e o dia não escorregarem por causa disso (uma montagem concluída às 22h
+aparecendo com a data do dia seguinte, ou caindo no mês errado na virada), o
+sistema não usa o fuso do servidor: ele calcula tudo em
+`America/Sao_Paulo`, de forma explícita, em `lib/datas.ts`. Não é preciso
+configurar variável nenhuma para isso funcionar.
+
 ## Publicando o sistema no Vercel
 
 Com o banco Postgres já configurado no `.env`, o deploy é feito subindo este
-projeto (pasta `sistema-montador`) para o Vercel — pela CLI (`vercel`) ou
+projeto para o Vercel — pela CLI (`vercel`) ou
 conectando um repositório do GitHub. As mesmas variáveis `DATABASE_URL`,
 `DIRECT_URL` e `SESSION_SECRET` do `.env` precisam ser cadastradas nas
 "Environment Variables" do projeto no Vercel. Depois disso, o link gerado
 (ex: `seusistema.vercel.app`) já funciona tanto para o admin quanto para os
 montadores, em qualquer dispositivo com internet.
+
+As migrações do banco são aplicadas no início do build, por
+`scripts/preparar-banco.mjs`. **Deploy de preview não aplica migração nem
+seed**: como o preview usa as mesmas variáveis de ambiente do projeto, ele
+apontaria para o banco de produção, e abrir um preview só para conferir uma
+tela acabaria mudando o banco de verdade.
 
 ### Armazenamento das fotos (obrigatório)
 
@@ -228,6 +256,13 @@ preenchido.
   marcar pagamento, enviar a conclusão ao CentralSync, etc).
 - `lib/financeiro.ts` — o percentual que a empresa cobra da loja e as contas
   que dependem dele (usado no painel e no financeiro).
+- `lib/datas.ts` — mês, dia e formatação ancorados no fuso de Itabuna, sem
+  depender do fuso em que o servidor está rodando.
+- `lib/validacao.ts` — o que é aceito nos campos que chegam de fora (status,
+  tipo de ocorrência etc).
+- `lib/nota-fiscal.ts` — leitura do XML da NFe e do texto do DANFE lido por
+  OCR (código puro, coberto por testes).
+- `lib/limite.ts` — limite de tentativas de login e de chamadas à API.
 - `lib/mapas.ts` — links de Google Maps/Waze de uma parada e a montagem da
   rota com várias paradas.
 - `app/admin/` — todas as telas do painel do administrador (inclusive

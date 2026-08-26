@@ -1,5 +1,29 @@
 import type { NextConfig } from "next";
 
+// Cabeçalhos aplicados a todas as respostas. São os "de sempre", que não
+// dependem de conhecer o conteúdo da página -- de propósito não há
+// Content-Security-Policy aqui: o sistema carrega Firebase Auth, o mapa
+// embutido do Google e o OCR (tesseract.js, que usa worker e WebAssembly),
+// e uma CSP escrita no chute quebraria login, rota e importação de nota de
+// uma vez. Fica como passo seguinte, para ser feita medindo o que cada
+// tela realmente carrega.
+const CABECALHOS_SEGURANCA = [
+  // Impede que o sistema seja embutido em iframe de outro site
+  // (clickjacking): nenhuma tela daqui precisa ser embutida.
+  { key: "X-Frame-Options", value: "DENY" },
+  // Navegador não "adivinha" o tipo do arquivo servido.
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  // Ao sair para o Google Maps, o WhatsApp ou o CentralSync, manda só a
+  // origem -- nunca o caminho, que carrega o id da montagem.
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  // Nada aqui usa câmera via API do navegador (a foto entra por
+  // <input type="file">), microfone, geolocalização ou pagamento.
+  {
+    key: "Permissions-Policy",
+    value: "camera=(), microphone=(), geolocation=(), payment=()",
+  },
+];
+
 const nextConfig: NextConfig = {
   experimental: {
     serverActions: {
@@ -14,6 +38,23 @@ const nextConfig: NextConfig = {
       // recusa qualquer corpo acima de ~4,5 MB antes do Next ver o pedido.
       bodySizeLimit: "4mb",
     },
+  },
+
+  async headers() {
+    return [
+      {
+        source: "/:caminho*",
+        headers: CABECALHOS_SEGURANCA,
+      },
+      {
+        // A página de avaliação é pública (o cliente abre por um link de
+        // WhatsApp, sem login). Não deve aparecer em busca.
+        source: "/avaliar/:id",
+        headers: [
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
+        ],
+      },
+    ];
   },
 };
 

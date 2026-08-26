@@ -67,22 +67,73 @@ export const getSession = cache(async (): Promise<SessionPayload | null> => {
   }
 });
 
+/**
+ * A sessão conferida contra o banco, e não só contra a assinatura do cookie.
+ *
+ * O cookie vale 30 dias e carrega papel e nome congelados no momento do
+ * login -- ele não sabe que o usuário foi desativado, excluído ou teve o
+ * papel trocado depois disso. Antes daqui, desmarcar "Montador ativo" (ou
+ * até excluir o cadastro) não tirava ninguém de dentro do sistema: quem já
+ * estava logado continuava entrando até o cookie vencer, semanas depois.
+ *
+ * Também é por isso que `nome` e `role` saem do banco e não do cookie: são a
+ * versão atual, não a de quando a pessoa entrou.
+ *
+ * cache() garante uma consulta por requisição, mesmo com layout + página +
+ * componentes chamando isto.
+ */
+export const getSessionUser = cache(async () => {
+  const session = await getSession();
+  if (!session?.sub) return null;
+
+  const user = await prisma.user.findUnique({
+    where: { id: session.sub },
+    select: { id: true, nome: true, role: true, ativo: true },
+  });
+  if (!user || !user.ativo) return null;
+
+  return user;
+});
+
+// Encerra a sessão pela rota /logout em vez de redirecionar direto para
+// /login: o cookie continua válido (a assinatura está certa, o que mudou foi
+// o usuário no banco), então o proxy mandaria de volta para /admin e a
+// navegação entraria em laço. A rota /logout apaga o cookie antes de mandar
+// para o login -- e não está no matcher do proxy, justamente por isso.
+const SAIR_SESSAO_INVALIDA = "/logout?motivo=sessao";
+
 export async function requireAdmin(): Promise<SessionPayload> {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (session.role !== "ADMIN") redirect("/montador");
-  return session;
+
+  const user = await getSessionUser();
+  if (!user) redirect(SAIR_SESSAO_INVALIDA);
+  if (user.role !== "ADMIN") redirect("/montador");
+
+  return { sub: user.id, role: "ADMIN", nome: user.nome };
 }
 
 export async function requireMontador(): Promise<SessionPayload> {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (session.role !== "MONTADOR") redirect("/admin");
-  return session;
+
+  const user = await getSessionUser();
+  if (!user) redirect(SAIR_SESSAO_INVALIDA);
+  if (user.role !== "MONTADOR") redirect("/admin");
+
+  return { sub: user.id, role: "MONTADOR", nome: user.nome };
 }
 
-export const getCurrentUser = cache(async () => {
+/**
+ * Igual às duas acima, mas para as ações que atendem os dois painéis e
+ * decidem o que fazer a partir do papel de quem chamou.
+ */
+export async function requireUsuario(): Promise<SessionPayload> {
   const session = await getSession();
-  if (!session) return null;
-  return prisma.user.findUnique({ where: { id: session.sub } });
-});
+  if (!session) redirect("/login");
+
+  const user = await getSessionUser();
+  if (!user) redirect(SAIR_SESSAO_INVALIDA);
+
+  return { sub: user.id, role: user.role, nome: user.nome };
+}

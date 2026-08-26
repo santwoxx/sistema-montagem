@@ -6,6 +6,21 @@ import { prisma } from "@/lib/prisma";
 import { hashPassword, requireAdmin } from "@/lib/auth";
 import { paraNumeroBr } from "@/lib/format";
 
+// Todas as ações desta tela mexem em MONTADOR e só em MONTADOR. O id vem de
+// fora (é argumento da Server Action), então filtrar por `role` junto com o
+// id não é redundância: sem isso, o id de um administrador passado para
+// estas ações trocava o e-mail e a senha dele -- ou apagava a conta.
+const APENAS_MONTADOR = { role: "MONTADOR" } as const;
+
+// A checagem de e-mail repetido é feita antes, mas entre a consulta e a
+// escrita cabe outro cadastro com o mesmo e-mail. Quando isso acontece, quem
+// barra é a restrição única do banco -- que sem tratamento vira erro 500.
+function ehEmailDuplicado(error: unknown) {
+  const codigo = (error as { code?: string })?.code;
+  const alvo = (error as { meta?: { target?: string[] } })?.meta?.target;
+  return codigo === "P2002" && (alvo ?? []).includes("email");
+}
+
 export async function criarMontadorAction(formData: FormData) {
   await requireAdmin();
 
@@ -41,16 +56,27 @@ export async function criarMontadorAction(formData: FormData) {
 
   const senhaHash = await hashPassword(senha);
 
-  await prisma.user.create({
-    data: {
-      nome,
-      email,
-      telefone: telefone || null,
-      senha: senhaHash,
-      role: "MONTADOR",
-      comissaoPadrao: comissao,
-    },
-  });
+  try {
+    await prisma.user.create({
+      data: {
+        nome,
+        email,
+        telefone: telefone || null,
+        senha: senhaHash,
+        role: "MONTADOR",
+        comissaoPadrao: comissao,
+      },
+    });
+  } catch (error) {
+    if (ehEmailDuplicado(error)) {
+      redirect(
+        `/admin/montadores?erro=${encodeURIComponent(
+          "Já existe um usuário cadastrado com este e-mail."
+        )}`
+      );
+    }
+    throw error;
+  }
 
   revalidatePath("/admin/montadores");
   redirect(
@@ -100,17 +126,40 @@ export async function atualizarMontadorAction(id: string, formData: FormData) {
     );
   }
 
-  await prisma.user.update({
-    where: { id },
-    data: {
-      nome,
-      email,
-      telefone: telefone || null,
-      ativo,
-      comissaoPadrao,
-      ...(novaSenha ? { senha: await hashPassword(novaSenha) } : {}),
-    },
-  });
+  let alterados = 0;
+  try {
+    // updateMany (e não update) para poder filtrar por `role` junto com o
+    // id -- `update` só aceita campos únicos no `where`.
+    const resultado = await prisma.user.updateMany({
+      where: { id, ...APENAS_MONTADOR },
+      data: {
+        nome,
+        email,
+        telefone: telefone || null,
+        ativo,
+        comissaoPadrao,
+        ...(novaSenha ? { senha: await hashPassword(novaSenha) } : {}),
+      },
+    });
+    alterados = resultado.count;
+  } catch (error) {
+    if (ehEmailDuplicado(error)) {
+      redirect(
+        `/admin/montadores/${id}?erro=${encodeURIComponent(
+          "Este e-mail já está em uso por outro usuário."
+        )}`
+      );
+    }
+    throw error;
+  }
+
+  if (alterados === 0) {
+    redirect(
+      `/admin/montadores?erro=${encodeURIComponent(
+        "Montador não encontrado."
+      )}`
+    );
+  }
 
   revalidatePath("/admin/montadores");
   revalidatePath(`/admin/montadores/${id}`);
@@ -121,6 +170,16 @@ export async function atualizarMontadorAction(id: string, formData: FormData) {
 
 export async function salvarComissoesAction(montadorId: string, formData: FormData) {
   await requireAdmin();
+
+  const montador = await prisma.user.findFirst({
+    where: { id: montadorId, ...APENAS_MONTADOR },
+    select: { id: true },
+  });
+  if (!montador) {
+    redirect(
+      `/admin/montadores?erro=${encodeURIComponent("Montador não encontrado.")}`
+    );
+  }
 
   const lojas = await prisma.loja.findMany({ select: { id: true } });
 
@@ -153,11 +212,15 @@ export async function salvarComissoesAction(montadorId: string, formData: FormDa
 export async function excluirMontadorAction(id: string) {
   await requireAdmin();
 
-  await prisma.user.delete({ where: { id } });
+  const { count } = await prisma.user.deleteMany({
+    where: { id, ...APENAS_MONTADOR },
+  });
 
   revalidatePath("/admin/montadores");
   revalidatePath("/admin/montagens");
   redirect(
-    `/admin/montadores?sucesso=${encodeURIComponent("Montador excluído.")}`
+    count === 0
+      ? `/admin/montadores?erro=${encodeURIComponent("Montador não encontrado.")}`
+      : `/admin/montadores?sucesso=${encodeURIComponent("Montador excluído.")}`
   );
 }

@@ -21,9 +21,9 @@ const TAMANHO_MAXIMO_MANUAL = 3 * 1024 * 1024;
 // Estes dois números são metade de um acerto que vive nos dois sistemas: o
 // CentralSync calcula a despesa de montagem dele com os mesmos 8% + 2%
 // (DARIO_COMMISSION_PERCENT / DARIO_ASSISTANCE_PERCENT em
-// config/darioMontador.ts, no outro repositório). Estava 1% aqui e 2% lá,
-// então o que a Central Móveis era cobrada nunca batia com o relatório dela.
-// Mexer em um lado sem o outro traz a divergência de volta.
+// config/darioMontador.ts). Estava 1% aqui e 2% lá, então o que a Central
+// Móveis era cobrada nunca batia com o relatório dela. Mexer em um lado sem
+// o outro traz a divergência de volta.
 //
 // A base já vem certa de lá: o CentralSync manda em `valorServico` só o
 // valor dos itens que o cliente comprou COM montagem (sem frete e sem a taxa
@@ -90,6 +90,14 @@ export function NovaMontagemForm({
   const [dataAgendada, setDataAgendada] = useState(valoresIniciais?.dataAgendada ?? "");
   const [observacoes, setObservacoes] = useState(valoresIniciais?.observacoes ?? "");
   const [notaPendenteId, setNotaPendenteId] = useState("");
+  // O "Nº do pedido" é um campo de texto comum na tela, mas quando vale
+  // "del-…" ele é a chave que liga esta montagem à entrega no CentralSync:
+  // trocá-lo pelo número do pedido da loja (que é o que o rótulo e o exemplo
+  // sugerem) apaga a integração em silêncio -- a montagem some da fila de
+  // envio do painel e o botão da tela dela deixa de existir. Por isso ele
+  // nasce travado nesse caso, com um jeito explícito de destravar para quem
+  // realmente precisar corrigir o número.
+  const [numeroDestravado, setNumeroDestravado] = useState(false);
   const [manualPreparando, setManualPreparando] = useState(false);
   const [manualAviso, setManualAviso] = useState<string | null>(null);
 
@@ -210,6 +218,11 @@ export function NovaMontagemForm({
       setPercentual(String(comissao));
     }
   }
+
+  // readOnly (e não disabled): campo desabilitado não vai no FormData, e a
+  // ação grava `numeroPedido: numeroPedido || null` -- ou seja, travar com
+  // disabled apagaria justamente o número que se quer proteger.
+  const numeroTravado = pareceIdDoCentralSync(numeroPedido) && !numeroDestravado;
 
   const valorServicoCalculado = useMemo(() => {
     return paraNumeroBr(valorServico) || 0;
@@ -379,14 +392,34 @@ export function NovaMontagemForm({
           Serviço e valores
         </h2>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Nº do pedido (opcional)">
-            <Input
-              name="numeroPedido"
-              value={numeroPedido}
-              onChange={(e) => setNumeroPedido(e.target.value)}
-              placeholder="Ex: 12345"
-            />
-          </Field>
+          <div>
+            <Field
+              label="Nº do pedido (opcional)"
+              hint={
+                numeroTravado
+                  ? "Número da entrega no CentralSync — é por ele que os dois sistemas se reconhecem. Mudar aqui tira esta montagem da fila de envio."
+                  : undefined
+              }
+            >
+              <Input
+                name="numeroPedido"
+                value={numeroPedido}
+                onChange={(e) => setNumeroPedido(e.target.value)}
+                readOnly={numeroTravado}
+                placeholder="Ex: 12345"
+                className={numeroTravado ? "bg-slate-100 text-slate-600" : undefined}
+              />
+            </Field>
+            {numeroTravado ? (
+              <button
+                type="button"
+                onClick={() => setNumeroDestravado(true)}
+                className="mt-1.5 text-sm font-medium text-slate-500 underline hover:text-navy"
+              >
+                Destravar assim mesmo
+              </button>
+            ) : null}
+          </div>
           <Field label="Data agendada (opcional)">
             <Input
               type="date"

@@ -1,25 +1,26 @@
+import Form from "next/form";
 import { requireMontador } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Badge, Card, Field, Input, PageHeader, Select, StatCard, Vazio } from "@/components/ui";
 import { formatarData, formatarMoeda } from "@/lib/format";
+import { intervaloDoMes, mesAtual } from "@/lib/datas";
 import type { Prisma } from "@prisma/client";
-
-function mesAtual() {
-  const agora = new Date();
-  return `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}`;
-}
 
 export default async function FinanceiroMontadorPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mes?: string; lojaId?: string }>;
+  searchParams: Promise<{ mes?: string; lojaId?: string; base?: string }>;
 }) {
   const session = await requireMontador();
-  const { mes: mesParam, lojaId } = await searchParams;
+  const { mes: mesParam, lojaId, base: baseParam } = await searchParams;
   const mes = mesParam ?? mesAtual();
-  const [ano, mesNumero] = mes.split("-").map(Number);
-  const inicio = new Date(ano, (mesNumero || 1) - 1, 1);
-  const fim = new Date(ano, mesNumero || 1, 1);
+
+  // Mesma escolha que existe no financeiro do admin, para os dois poderem
+  // olhar exatamente o mesmo recorte. O padrão aqui continua sendo a data
+  // de conclusão, que é quando o montador de fato ganhou o serviço.
+  const base = baseParam === "cadastro" ? "cadastro" : "conclusao";
+  const campoData = base === "cadastro" ? "createdAt" : "concluidoEm";
+  const { inicio, fim } = intervaloDoMes(mes);
 
   const concluidasBase: Prisma.MontagemWhereInput = {
     montadorId: session.sub,
@@ -47,10 +48,10 @@ export default async function FinanceiroMontadorPage({
     }),
     prisma.montagem.aggregate({
       _sum: { valorMontador: true },
-      where: { ...concluidasBase, concluidoEm: { gte: inicio, lt: fim } },
+      where: { ...concluidasBase, [campoData]: { gte: inicio, lt: fim } },
     }),
     prisma.montagem.count({
-      where: { ...concluidasBase, concluidoEm: { gte: inicio, lt: fim } },
+      where: { ...concluidasBase, [campoData]: { gte: inicio, lt: fim } },
     }),
     lojaId
       ? Promise.resolve([])
@@ -60,9 +61,18 @@ export default async function FinanceiroMontadorPage({
           _sum: { valorMontador: true },
         }),
     prisma.montagem.findMany({
-      where: { ...concluidasBase, concluidoEm: { gte: inicio, lt: fim } },
+      where: { ...concluidasBase, [campoData]: { gte: inicio, lt: fim } },
       orderBy: { concluidoEm: "desc" },
-      include: { loja: true },
+      select: {
+        id: true,
+        clienteNome: true,
+        concluidoEm: true,
+        valorServico: true,
+        valorMontador: true,
+        percentualMontador: true,
+        pagoAoMontador: true,
+        loja: { select: { nome: true } },
+      },
     }),
   ]);
 
@@ -81,9 +91,15 @@ export default async function FinanceiroMontadorPage({
       <PageHeader titulo="Financeiro" descricao="Seus ganhos com as montagens concluídas." />
 
       <Card className="mb-6">
-        <form className="grid gap-3 sm:grid-cols-3">
+        <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Field label="Mês">
             <Input type="month" name="mes" defaultValue={mes} />
+          </Field>
+          <Field label="Contar pelo">
+            <Select name="base" defaultValue={base}>
+              <option value="conclusao">Conclusão do serviço</option>
+              <option value="cadastro">Cadastro da montagem</option>
+            </Select>
           </Field>
           <Field label="Loja">
             <Select name="lojaId" defaultValue={lojaId ?? ""}>
@@ -141,7 +157,7 @@ export default async function FinanceiroMontadorPage({
       ) : null}
 
       <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
-        No mês selecionado
+        No mês selecionado ({base === "cadastro" ? "por cadastro" : "por conclusão"})
       </h2>
       <div className="mb-8 grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
         <StatCard

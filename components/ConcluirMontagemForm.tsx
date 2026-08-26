@@ -5,6 +5,12 @@ import { Alerta, Button } from "@/components/ui";
 import { SignaturePad, type SignaturePadHandle } from "@/components/SignaturePad";
 import { comprimirImagem } from "@/lib/imagem";
 
+// Mesmo teto do servidor (TAMANHO_MAXIMO_UPLOAD em lib/upload.ts). Fica
+// repetido aqui de propósito: aquele arquivo importa o SDK do Vercel Blob,
+// que não pode ir para o pacote do navegador -- mesmo motivo do
+// TAMANHO_MAXIMO_MANUAL em components/NovaMontagemForm.tsx.
+const TAMANHO_MAXIMO_FOTO = 3 * 1024 * 1024;
+
 export function ConcluirMontagemForm({
   action,
   exigirAssinaturas = true,
@@ -75,8 +81,22 @@ export function ConcluirMontagemForm({
 
     startTransition(async () => {
       try {
+        const foto = fotoPreparada ? await fotoPreparada : null;
+
+        // Foto acima do teto some antes de chegar na action (o Next recusa o
+        // corpo inteiro), e o catch lá embaixo culpava a internet por isso --
+        // no celular, justamente onde as fotos são maiores, a mensagem
+        // mandava conferir o sinal quando o problema era o tamanho.
+        if (foto && foto.size > TAMANHO_MAXIMO_FOTO) {
+          setEnviando(false);
+          setErroLocal(
+            `Essa foto ficou com ${(foto.size / (1024 * 1024)).toFixed(1)} MB, acima do limite de 3 MB, e não vai subir — não é a internet. Tire outra pelo próprio celular (a câmera do aplicativo de fotos costuma sair menor) ou escolha uma imagem menor.`
+          );
+          return;
+        }
+
         const formData = new FormData();
-        if (fotoPreparada) formData.set("foto", await fotoPreparada);
+        if (foto) formData.set("foto", foto);
         formData.set("assinaturaMontador", assinaturaMontador);
         formData.set("assinaturaCliente", assinaturaCliente);
         await action(formData);
@@ -87,7 +107,7 @@ export function ConcluirMontagemForm({
         console.error("Falha ao enviar o comprovante da montagem:", erro);
         setEnviando(false);
         setErroLocal(
-          "Não consegui enviar agora. Confira a internet e tente de novo — nada foi perdido, a foto e as assinaturas continuam aqui."
+          "Não consegui enviar agora. Confira a internet e tente de novo — nada foi perdido, a foto e as assinaturas continuam aqui. Se insistir, tente com uma foto menor."
         );
       }
     });

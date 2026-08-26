@@ -1,3 +1,4 @@
+import Form from "next/form";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { Badge, Button, Card, Field, Input, PageHeader, Select, Vazio } from "@/components/ui";
@@ -19,18 +20,13 @@ import {
   STATUS_COLOR,
   STATUS_LABEL,
 } from "@/lib/format";
+import { intervaloDoDia } from "@/lib/datas";
 import type { Prisma } from "@prisma/client";
 
-// O dia agendado é gravado como meio-dia (ver paraData em lib/actions/
-// montagens.ts), então basta pegar da meia-noite à meia-noite seguinte para
-// as montagens do dia caírem dentro do intervalo.
-function intervaloDoDia(data: string) {
-  const inicio = new Date(`${data}T00:00:00`);
-  if (Number.isNaN(inicio.getTime())) return null;
-  const fim = new Date(inicio);
-  fim.setDate(fim.getDate() + 1);
-  return { inicio, fim };
-}
+// O dia agendado é gravado como meio-dia no fuso do negócio (ver paraData em
+// lib/actions/montagens.ts), e intervaloDoDia vai da meia-noite à meia-noite
+// seguinte nesse mesmo fuso -- então as montagens do dia caem dentro do
+// intervalo independentemente do fuso em que o servidor esteja rodando.
 
 export default async function RotaPage({
   searchParams,
@@ -76,7 +72,19 @@ export default async function RotaPage({
       // Mesma ordem em que as paradas entram na rota: quem tem hora marcada
       // primeiro, depois as demais pela ordem de cadastro.
       orderBy: [{ dataAgendada: "asc" }, { createdAt: "asc" }],
-      include: { loja: { select: { nome: true } }, montador: { select: { nome: true } } },
+      select: {
+        id: true,
+        clienteNome: true,
+        clienteTelefone: true,
+        clienteEndereco: true,
+        descricaoServico: true,
+        valorServico: true,
+        dataAgendada: true,
+        status: true,
+        feitoPorAdm: true,
+        loja: { select: { nome: true } },
+        montador: { select: { nome: true } },
+      },
     }),
   ]);
 
@@ -118,7 +126,7 @@ export default async function RotaPage({
       />
 
       <Card className="mb-6">
-        <form className="grid gap-3 sm:grid-cols-2">
+        <Form action="/admin/rota" className="grid gap-3 sm:grid-cols-2">
           <Field label="Dia">
             <Input type="date" name="data" defaultValue={data} />
           </Field>
@@ -161,7 +169,7 @@ export default async function RotaPage({
               Limpar
             </Link>
           </div>
-        </form>
+        </Form>
       </Card>
 
       {paradas.length === 0 ? (

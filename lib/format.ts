@@ -1,3 +1,5 @@
+import { FUSO_HORARIO, partesNoFuso } from "@/lib/datas";
+
 export function formatarMoeda(valor: number | null | undefined) {
   return (valor ?? 0).toLocaleString("pt-BR", {
     style: "currency",
@@ -5,25 +7,36 @@ export function formatarMoeda(valor: number | null | undefined) {
   });
 }
 
+// Todas as datas são exibidas no fuso do negócio, não no fuso de quem
+// renderiza. Sem o `timeZone` explícito, o servidor da Vercel (UTC) mostrava
+// uma montagem concluída às 22h já com a data do dia seguinte -- e o mesmo
+// registro aparecia com data diferente conforme fosse o servidor ou o
+// navegador a formatar.
 export function formatarData(data: Date | string | null | undefined) {
   if (!data) return "-";
   const d = typeof data === "string" ? new Date(data) : data;
-  return d.toLocaleDateString("pt-BR");
+  if (Number.isNaN(d.getTime())) return "-";
+  return d.toLocaleDateString("pt-BR", { timeZone: FUSO_HORARIO });
 }
 
 export function formatarDataHora(data: Date | string | null | undefined) {
   if (!data) return "-";
   const d = typeof data === "string" ? new Date(data) : data;
-  return d.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+  if (Number.isNaN(d.getTime())) return "-";
+  return d.toLocaleString("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+    timeZone: FUSO_HORARIO,
+  });
 }
 
+/** yyyy-MM-dd para `<input type="date">`, no fuso do negócio. */
 export function paraInputDate(data: Date | string | null | undefined) {
   if (!data) return "";
   const d = typeof data === "string" ? new Date(data) : data;
-  // yyyy-MM-dd para <input type="date">
-  const off = d.getTimezoneOffset();
-  const local = new Date(d.getTime() - off * 60 * 1000);
-  return local.toISOString().slice(0, 10);
+  if (Number.isNaN(d.getTime())) return "";
+  const p = partesNoFuso(d);
+  return `${p.ano}-${String(p.mes).padStart(2, "0")}-${String(p.dia).padStart(2, "0")}`;
 }
 
 export function apenasDigitos(valor: string) {

@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
-import { getSession } from "@/lib/auth";
+import { requireUsuario } from "@/lib/auth";
 import { apenasDigitos } from "@/lib/format";
 
 async function obterUrlBase() {
@@ -27,10 +27,18 @@ async function obterUrlBase() {
 export async function gerarLinkAvaliacaoAction(
   id: string
 ): Promise<{ ok: true; url: string } | { ok: false; erro: string }> {
-  const session = await getSession();
-  if (!session) redirect("/login");
+  const session = await requireUsuario();
 
-  const montagem = await prisma.montagem.findUnique({ where: { id } });
+  const montagem = await prisma.montagem.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      status: true,
+      montadorId: true,
+      clienteNome: true,
+      clienteTelefone: true,
+    },
+  });
   if (!montagem) return { ok: false, erro: "Montagem não encontrada." };
   if (session.role === "MONTADOR" && montagem.montadorId !== session.sub) {
     return { ok: false, erro: "Você não tem acesso a esta montagem." };
@@ -82,7 +90,10 @@ export async function enviarAvaliacaoAction(id: string, formData: FormData) {
   const erro = (mensagem: string) =>
     redirect(`/avaliar/${id}?erro=${encodeURIComponent(mensagem)}`);
 
-  const montagem = await prisma.montagem.findUnique({ where: { id } });
+  const montagem = await prisma.montagem.findUnique({
+    where: { id },
+    select: { status: true, montadorId: true },
+  });
   if (!montagem || montagem.status !== "CONCLUIDO" || !montagem.montadorId) {
     erro("Este link de avaliação não está mais disponível.");
     return;

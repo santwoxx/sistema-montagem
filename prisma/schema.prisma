@@ -162,8 +162,13 @@ model Montagem {
 // montagem", clicar em "Usar esta nota" e conferir os dados antes de salvar
 // — nada é lançado como Montagem paga automaticamente.
 model NotaPendente {
-  id           String @id @default(cuid())
-  numeroPedido String?
+  id String @id @default(cuid())
+  // Único: dois envios do mesmo pedido pelo CentralSync (retry, clique
+  // duplo) não podem virar duas notas na fila. O SELECT-antes-do-INSERT da
+  // API não dava conta de chamadas simultâneas -- ver a migração
+  // 20260824120000_nota_pendente_numero_unico. Continua opcional: no
+  // Postgres, índice único aceita vários NULL.
+  numeroPedido String? @unique
 
   clienteNome     String
   clienteTelefone String?
@@ -190,7 +195,6 @@ model NotaPendente {
   criadaEm DateTime @default(now())
 
   @@index([montadorSugeridoId])
-  @@index([numeroPedido])
 }
 
 // Registro de visitas em que o montador não conseguiu concluir a

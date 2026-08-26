@@ -31,6 +31,14 @@ import {
   STATUS_LABEL,
 } from "@/lib/format";
 
+// Teto de tempo das Server Actions desta página (a plataforma lê isto do
+// build). O envio ao CentralSync espera uma Cloud Function que quase sempre
+// parte fria e tenta duas vezes (ver avisarCentralSync): com o teto padrão
+// de 10s da Vercel, a função era cortada no meio e o admin recebia um erro
+// da plataforma, sem a mensagem explicando o que houve. 60s é o máximo
+// aceito em qualquer plano, e só é usado se a chamada realmente demorar.
+export const maxDuration = 60;
+
 export default async function MontagemDetalhePage({
   params,
   searchParams,

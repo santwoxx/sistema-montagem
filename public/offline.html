@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sem conexão — MontaFácil</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+        background-color: #f4f6f9;
+        color: #081729;
+      }
+      .caixa {
+        max-width: 360px;
+        width: 100%;
+        text-align: center;
+        background-color: #fff;
+        border-radius: 16px;
+        padding: 32px 24px;
+        box-shadow: 0 4px 20px rgba(8, 23, 41, 0.08);
+      }
+      h1 { font-size: 17px; margin: 0 0 8px; }
+      p { font-size: 14px; color: #475569; margin: 0 0 20px; line-height: 1.5; }
+      button {
+        background-color: #c8963e;
+        color: #0b1a2a;
+        border: none;
+        border-radius: 10px;
+        padding: 12px 20px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="caixa">
+      <h1>Sem conexão</h1>
+      <p>
+        Você está sem internet no momento. O MontaFácil precisa de conexão para
+        carregar suas montagens. Assim que o sinal voltar, toque em tentar de
+        novo — nada do que você já enviou foi perdido.
+      </p>
+      <button onclick="location.reload()">Tentar de novo</button>
+    </div>
+  </body>
+</html>

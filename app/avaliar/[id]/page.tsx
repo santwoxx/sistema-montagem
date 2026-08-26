@@ -34,9 +34,20 @@ export default async function AvaliarPage({
   const { id } = await params;
   const { erro } = await searchParams;
 
+  // Página pública: carrega só o necessário. `include: { montador: true }`
+  // trazia a linha inteira do usuário (inclusive o hash da senha) e as
+  // assinaturas da montagem para renderizar um primeiro nome.
   const montagem = await prisma.montagem.findUnique({
     where: { id },
-    include: { montador: true, avaliacao: true },
+    select: {
+      id: true,
+      status: true,
+      montadorId: true,
+      montador: { select: { nome: true } },
+      avaliacao: {
+        select: { estrelas: true, comentario: true, criadoEm: true },
+      },
+    },
   });
 
   if (!montagem || !montagem.montadorId || montagem.status !== "CONCLUIDO") {

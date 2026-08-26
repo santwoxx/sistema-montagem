@@ -1,5 +1,8 @@
 import Link from "next/link";
-import type { AnchorHTMLAttributes, ButtonHTMLAttributes, InputHTMLAttributes, LabelHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
+// Reexportado para quem já importa { Modal } de "@/components/ui". Mora em
+// arquivo próprio porque é "use client" (ver components/Modal.tsx).
+export { Modal } from "@/components/Modal";
+import type { AnchorHTMLAttributes, ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -82,15 +85,6 @@ export function Select({
   );
 }
 
-export function Label({ className, ...props }: LabelHTMLAttributes<HTMLLabelElement>) {
-  return (
-    <label
-      className={cx("mb-1.5 block text-sm font-medium text-slate-700", className)}
-      {...props}
-    />
-  );
-}
-
 export function Field({
   label,
   hint,
@@ -100,12 +94,22 @@ export function Field({
   hint?: string;
   children: ReactNode;
 }) {
+  // O controle vai DENTRO do <label>, e não ao lado dele.
+  //
+  // Antes eram um <label> e um <input> irmãos, sem htmlFor/id ligando os
+  // dois: leitor de tela anunciava o campo sem nome e tocar no rótulo não
+  // focava o campo. Gerar um id a partir do texto do rótulo não serviria --
+  // "Nome da loja" aparece uma vez no formulário de cadastro e mais uma em
+  // cada loja da lista, então os ids se repetiriam na mesma página e o
+  // toque focaria o campo errado. Aninhar resolve sem depender de id.
   return (
-    <div>
-      <Label>{label}</Label>
+    <label className="block">
+      <span className="mb-1.5 block text-sm font-medium text-slate-700">{label}</span>
       {children}
-      {hint ? <p className="mt-1.5 text-sm text-slate-600 leading-snug">{hint}</p> : null}
-    </div>
+      {hint ? (
+        <span className="mt-1.5 block text-sm leading-snug text-slate-600">{hint}</span>
+      ) : null}
+    </label>
   );
 }
 
@@ -235,41 +239,6 @@ export function Vazio({ children }: { children: ReactNode }) {
   return (
     <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/50 px-6 py-10 text-center text-base text-slate-600">
       {children}
-    </div>
-  );
-}
-
-export function Modal({
-  aberto,
-  onClose,
-  titulo,
-  children,
-}: {
-  aberto: boolean;
-  onClose: () => void;
-  titulo?: string;
-  children: ReactNode;
-}) {
-  if (!aberto) return null;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-navy/40 backdrop-blur-sm transition-opacity"
-        onClick={onClose}
-      />
-      
-      {/* Modal Content */}
-      <div className="relative w-full max-w-md animate-in fade-in zoom-in-95 duration-200 flex flex-col rounded-2xl bg-white shadow-xl shadow-navy/10 overflow-hidden">
-        {titulo ? (
-          <div className="border-b border-slate-100 px-5 py-4">
-            <h3 className="text-lg font-bold text-navy font-display">{titulo}</h3>
-          </div>
-        ) : null}
-        
-        <div className="p-5">{children}</div>
-      </div>
     </div>
   );
 }

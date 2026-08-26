@@ -1,10 +1,17 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { createSession, destroySession, hashPassword, verifyPassword } from "@/lib/auth";
 import { emailAutorizadoComoAdmin, verificarTokenGoogle } from "@/lib/firebase-verify";
+import { ipDoPedido, limparTentativas, registrarTentativa } from "@/lib/limite";
+
+// 10 tentativas de senha errada em 15 minutos, contadas por e-mail e por
+// origem. É folgado para quem errou a senha algumas vezes no celular e
+// apertado para quem está varrendo senhas. Ver as ressalvas em lib/limite.ts.
+const LIMITE_LOGIN = { limite: 10, janelaMs: 15 * 60 * 1000 };
 
 export async function loginAction(formData: FormData) {
   const email = String(formData.get("email") || "")
@@ -17,6 +24,24 @@ export async function loginAction(formData: FormData) {
     redirect(`/login?erro=${encodeURIComponent("Preencha e-mail e senha.")}`);
   }
 
+  // Duas chaves: por e-mail (para não deixar martelar uma conta específica
+  // de vários lugares) e por origem (para não deixar varrer vários e-mails
+  // do mesmo lugar).
+  const ip = ipDoPedido(await headers());
+  const chaves = [`login:email:${email}`, `login:ip:${ip}`];
+  for (const chave of chaves) {
+    const limite = registrarTentativa(chave, LIMITE_LOGIN);
+    if (!limite.permitido) {
+      redirect(
+        `/login?erro=${encodeURIComponent(
+          `Muitas tentativas seguidas. Espere ${Math.ceil(
+            limite.esperarSegundos / 60
+          )} minuto(s) e tente de novo.`
+        )}`
+      );
+    }
+  }
+
   const user = await prisma.user.findUnique({ where: { email } });
 
   if (!user || !user.ativo) {
@@ -27,6 +52,9 @@ export async function loginAction(formData: FormData) {
   if (!senhaOk) {
     redirect(`/login?erro=${encodeURIComponent("E-mail ou senha inválidos.")}`);
   }
+
+  // Entrou: o contador não pode continuar penalizando esta conta.
+  for (const chave of chaves) limparTentativas(chave);
 
   await createSession({ sub: user.id, role: user.role, nome: user.nome });
 

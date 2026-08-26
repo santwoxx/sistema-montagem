@@ -26,7 +26,13 @@ export const SignaturePad = forwardRef<SignaturePadHandle, { label: string }>(
 
       function ajustarTamanho() {
         if (!canvas) return;
-        const proporcao = Math.max(window.devicePixelRatio || 1, 1);
+        // Teto de 2 na proporção de pixels. A assinatura é guardada como PNG
+        // em base64 (campo Text no banco) e vai inteira no aviso ao
+        // CentralSync -- e o tamanho dela cresce com o quadrado desta
+        // proporção. Celular costuma reportar 3 ou mais, ou seja, a mesma
+        // assinatura pesava algumas vezes mais quando colhida na rua do que
+        // no computador. Em 2 o traço continua liso na tela do aparelho.
+        const proporcao = Math.min(Math.max(window.devicePixelRatio || 1, 1), 2);
         const { width, height } = canvas.getBoundingClientRect();
         const novaLargura = Math.round(width * proporcao);
         const novaAltura = Math.round(height * proporcao);

@@ -47,9 +47,3 @@ next-env.d.ts
 /prisma/dev.db-journal
 *.db
 *.db-journal
-
-.vercel
-.env*
-
-.vercel
-.env*

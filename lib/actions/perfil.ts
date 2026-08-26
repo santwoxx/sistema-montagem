@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { createSession, requireMontador } from "@/lib/auth";
 import {
+  apagarArquivo,
   enviarArquivo,
   extensaoDe,
   TAMANHO_MAXIMO_UPLOAD,
@@ -47,6 +48,13 @@ export async function atualizarPerfilAction(formData: FormData) {
     fotoUrl = envio.url;
   }
 
+  const anterior = fotoUrl
+    ? await prisma.user.findUnique({
+        where: { id: session.sub },
+        select: { fotoUrl: true },
+      })
+    : null;
+
   await prisma.user.update({
     where: { id: session.sub },
     data: {
@@ -55,6 +63,12 @@ export async function atualizarPerfilAction(formData: FormData) {
       ...(fotoUrl ? { fotoUrl } : {}),
     },
   });
+
+  // Foto de perfil trocada: apaga a anterior (melhor esforço, já com o
+  // banco gravado).
+  if (fotoUrl && anterior?.fotoUrl && anterior.fotoUrl !== fotoUrl) {
+    await apagarArquivo(anterior.fotoUrl);
+  }
 
   // O cookie de sessão guarda o nome desde o login; atualiza para refletir
   // a mudança imediatamente (sem precisar deslogar e logar de novo).

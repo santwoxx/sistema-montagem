@@ -1,10 +1,27 @@
 "use client";
 
-import { useState } from "react";
-import { signInWithPopup } from "firebase/auth";
+import { useEffect, useState } from "react";
+import { getRedirectResult, signInWithPopup, signInWithRedirect } from "firebase/auth";
 import { firebaseAuth, googleProvider } from "@/lib/firebase-client";
 import { loginGoogleAction } from "@/lib/actions/auth";
 import { Alerta } from "@/components/ui";
+
+// Erros que significam "aqui não vai abrir popup nenhum": aplicativo
+// instalado na tela inicial do celular (o manifest declara display
+// standalone), navegador embutido do WhatsApp/Instagram, bloqueador de
+// popup. Neles a janela ou não abre, ou abre fora do aplicativo e nunca
+// volta -- e como o admin entra justamente pelo Google, o login ficava
+// impossível no celular, com a mensagem genérica de "tente novamente".
+//
+// Nesses casos a entrada segue por redirecionamento, que é o caminho que o
+// próprio Firebase recomenda para celular. O popup continua sendo a primeira
+// tentativa porque no computador é mais rápido e não recarrega a página.
+const CODIGOS_SEM_POPUP = new Set([
+  "auth/popup-blocked",
+  "auth/cancelled-popup-request",
+  "auth/operation-not-supported-in-this-environment",
+  "auth/web-storage-unsupported",
+]);
 
 function IconeGoogle() {
   return (
@@ -33,6 +50,33 @@ export function GoogleLoginButton() {
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
 
+  // Volta do redirecionamento: o Firebase guarda o resultado e entrega aqui,
+  // na primeira montagem da tela de login. Quando não houve redirecionamento
+  // (o caso normal) isso devolve null e nada acontece.
+  useEffect(() => {
+    let ativo = true;
+    (async () => {
+      try {
+        const resultado = await getRedirectResult(firebaseAuth);
+        if (!resultado || !ativo) return;
+        setCarregando(true);
+        const idToken = await resultado.user.getIdToken();
+        const resposta = await loginGoogleAction(idToken);
+        if (resposta?.error && ativo) {
+          setErro(resposta.error);
+          setCarregando(false);
+        }
+      } catch {
+        if (!ativo) return;
+        setErro("Não foi possível concluir a entrada com o Google. Tente novamente.");
+        setCarregando(false);
+      }
+    })();
+    return () => {
+      ativo = false;
+    };
+  }, []);
+
   async function entrar() {
     setErro(null);
     setCarregando(true);
@@ -43,9 +87,21 @@ export function GoogleLoginButton() {
       if (resposta?.error) {
         setErro(resposta.error);
       }
-    } catch {
+      setCarregando(false);
+    } catch (e) {
+      const codigo = (e as { code?: string })?.code ?? "";
+      if (CODIGOS_SEM_POPUP.has(codigo)) {
+        try {
+          // Sai da página agora; quem termina o login é o efeito acima,
+          // quando o Google devolver o usuário para cá. O botão fica em
+          // "Entrando…" de propósito até a navegação acontecer.
+          await signInWithRedirect(firebaseAuth, googleProvider);
+          return;
+        } catch {
+          // Nem por redirecionamento foi: cai na mensagem genérica abaixo.
+        }
+      }
       setErro("Não foi possível entrar com o Google. Tente novamente.");
-    } finally {
       setCarregando(false);
     }
   }

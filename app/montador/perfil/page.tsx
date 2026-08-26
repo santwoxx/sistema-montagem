@@ -5,6 +5,7 @@ import { Alerta, Card, LinkButton, PageHeader, Vazio } from "@/components/ui";
 import { PerfilMontadorForm } from "@/components/PerfilMontadorForm";
 import { Estrelas } from "@/components/Estrelas";
 import { formatarData, formatarMoeda } from "@/lib/format";
+import { inicioDoMesLocal } from "@/lib/datas";
 
 export default async function PerfilMontadorPage({
   searchParams,
@@ -14,9 +15,7 @@ export default async function PerfilMontadorPage({
   const session = await requireMontador();
   const { erro, sucesso } = await searchParams;
 
-  const inicioMes = new Date();
-  inicioMes.setDate(1);
-  inicioMes.setHours(0, 0, 0, 0);
+  const inicioMes = inicioDoMesLocal();
 
   const [usuario, lojas, comissoes, ganhoMesAgg, avaliacaoAgg, avaliacoesRecentes] =
     await Promise.all([

@@ -1,3 +1,4 @@
+import Form from "next/form";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { Badge, Button, Card, Input, LinkButton, PageHeader, Select, Vazio } from "@/components/ui";
@@ -42,7 +43,21 @@ export default async function MontagensPage({
     prisma.montagem.findMany({
       where,
       orderBy: { createdAt: "desc" },
-      include: { loja: true, montador: true, _count: { select: { ocorrencias: true } } },
+      // `select` em vez de `include`: as assinaturas são PNG em base64 num
+      // campo Text (centenas de KB cada) e vinham junto nas 100 linhas sem
+      // nada nesta tela usá-las.
+      select: {
+        id: true,
+        clienteNome: true,
+        dataAgendada: true,
+        valorServico: true,
+        status: true,
+        pagoPelaLoja: true,
+        feitoPorAdm: true,
+        loja: { select: { nome: true } },
+        montador: { select: { nome: true } },
+        _count: { select: { ocorrencias: true } },
+      },
       take: LIMITE,
     }),
     prisma.montagem.count({ where }),
@@ -57,7 +72,7 @@ export default async function MontagensPage({
       />
 
       <Card className="mb-6">
-        <form className="grid gap-3 sm:grid-cols-3">
+        <Form action="/admin/montagens" className="grid gap-3 sm:grid-cols-3">
           <div className="sm:col-span-3">
             <Input
               name="busca"
@@ -98,7 +113,7 @@ export default async function MontagensPage({
               Limpar filtros
             </Link>
           </div>
-        </form>
+        </Form>
       </Card>
 
       {montagens.length === 0 ? (

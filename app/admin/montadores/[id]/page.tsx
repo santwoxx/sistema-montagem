@@ -50,7 +50,14 @@ export default async function MontadorDetalhePage({
       where: { montadorId: id },
       orderBy: { createdAt: "desc" },
       take: 8,
-      include: { loja: true },
+      select: {
+        id: true,
+        clienteNome: true,
+        createdAt: true,
+        valorMontador: true,
+        status: true,
+        loja: { select: { nome: true } },
+      },
     }),
     prisma.montagem.aggregate({
       _sum: { valorMontador: true },

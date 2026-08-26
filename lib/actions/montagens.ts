@@ -3,8 +3,10 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { getSession, requireAdmin } from "@/lib/auth";
+import { requireAdmin, requireUsuario } from "@/lib/auth";
 import {
+  apagarArquivo,
+  apagarArquivos,
   enviarArquivo,
   extensaoDe,
   TAMANHO_MAXIMO_UPLOAD,
@@ -12,16 +14,29 @@ import {
 } from "@/lib/upload";
 import { linkWhatsapp, OCORRENCIA_LABEL, paraNumeroBr } from "@/lib/format";
 import { pareceIdDoCentralSync } from "@/lib/centralsync";
+import { instanteLocal } from "@/lib/datas";
+import {
+  OrigemEnvioSchema,
+  STATUS_PERMITIDOS_MONTADOR,
+  StatusMontagemSchema,
+  TipoOcorrenciaSchema,
+} from "@/lib/validacao";
 
 function paraNumero(valor: FormDataEntryValue | null, padrao = 0) {
   const numero = paraNumeroBr(String(valor ?? ""));
   return Number.isFinite(numero) ? numero : padrao;
 }
 
+// Grava o dia agendado como meio-dia no fuso do negócio (e não meio-dia do
+// fuso do servidor): assim a data continua caindo no mesmo dia quando a
+// tela de rota filtra por dia e quando a lista formata para exibição.
 function paraData(valor: FormDataEntryValue | null) {
   const texto = String(valor ?? "").trim();
-  if (!texto) return null;
-  const data = new Date(`${texto}T12:00:00`);
+  const [ano, mes, dia] = texto.split("-").map(Number);
+  if (!Number.isInteger(ano) || !Number.isInteger(mes) || !Number.isInteger(dia)) {
+    return null;
+  }
+  const data = instanteLocal(ano, mes, dia, 12);
   return Number.isNaN(data.getTime()) ? null : data;
 }
 
@@ -193,11 +208,20 @@ export async function atualizarMontagemAction(id: string, formData: FormData) {
   const numeroPedido = String(formData.get("numeroPedido") || "").trim();
   const descricaoServico = String(formData.get("descricaoServico") || "").trim();
   const observacoes = String(formData.get("observacoes") || "").trim();
-  const status = String(formData.get("status") || "PENDENTE") as
-    | "PENDENTE"
-    | "EM_ANDAMENTO"
-    | "CONCLUIDO"
-    | "CANCELADO";
+  // Antes isto era um `as` direto no valor do formulário: um status
+  // inventado atravessava até o Prisma e derrubava a tela com erro 500 em
+  // vez de uma mensagem.
+  const statusAnalise = StatusMontagemSchema.safeParse(
+    String(formData.get("status") || "PENDENTE")
+  );
+  if (!statusAnalise.success) {
+    redirect(
+      `/admin/montagens/${id}?erro=${encodeURIComponent(
+        "Status inválido. Escolha um dos status da lista."
+      )}`
+    );
+  }
+  const status = statusAnalise.data;
 
   const valorServico = arredondar(paraNumero(formData.get("valorServico")));
   const percentualAssistencia = paraPercentual(formData.get("percentualAssistencia"));
@@ -217,7 +241,10 @@ export async function atualizarMontagemAction(id: string, formData: FormData) {
   const valorMontador = arredondar((valorServico * percentualMontador) / 100);
   const valorAssistencia = arredondar((valorServico * percentualAssistencia) / 100);
 
-  const atual = await prisma.montagem.findUnique({ where: { id } });
+  const atual = await prisma.montagem.findUnique({
+    where: { id },
+    select: { concluidoEm: true, manualUrl: true },
+  });
   const concluidoEm =
     status === "CONCLUIDO" ? atual?.concluidoEm ?? new Date() : null;
 
@@ -245,6 +272,12 @@ export async function atualizarMontagemAction(id: string, formData: FormData) {
     },
   });
 
+  // Manual substituído: o arquivo antigo não serve mais para ninguém.
+  // Depois do update, e em melhor esforço (ver apagarArquivo).
+  if (manualDados && atual?.manualUrl && atual.manualUrl !== manualDados.manualUrl) {
+    await apagarArquivo(atual.manualUrl);
+  }
+
   // Essa ação pode mudar o que o montador vê (montador designado, manual
   // anexado, endereço etc.), então o lado dele também precisa atualizar.
   revalidarMontagem(id);
@@ -254,8 +287,10 @@ export async function atualizarMontagemAction(id: string, formData: FormData) {
 }
 
 async function podeGerenciar(montagemId: string) {
-  const session = await getSession();
-  if (!session) redirect("/login");
+  // requireUsuario (e não getSession) porque o cookie sozinho não prova que
+  // a pessoa ainda tem acesso: ele sobrevive à desativação/exclusão do
+  // cadastro. Ver lib/auth.ts.
+  const session = await requireUsuario();
 
   const montagem = await prisma.montagem.findUnique({ where: { id: montagemId } });
   if (!montagem) redirect(session.role === "ADMIN" ? "/admin/montagens" : "/montador");
@@ -295,11 +330,35 @@ export async function atualizarClienteMontadorAction(id: string, formData: FormD
   );
 }
 
-export async function atualizarStatusAction(
-  id: string,
-  novoStatus: "PENDENTE" | "EM_ANDAMENTO" | "CONCLUIDO" | "CANCELADO"
-) {
+// `novoStatusBruto` é `string` (e não a união dos status) de propósito: o
+// valor chega de fora, e o tipo do parâmetro não é garantia nenhuma em
+// tempo de execução. Quem garante é o schema abaixo.
+export async function atualizarStatusAction(id: string, novoStatusBruto: string) {
   const { session } = await podeGerenciar(id);
+  const caminho = caminhoDetalhe(session.role, id);
+
+  const analise = StatusMontagemSchema.safeParse(novoStatusBruto);
+  if (!analise.success) {
+    redirect(`${caminho}?erro=${encodeURIComponent("Status inválido.")}`);
+    return;
+  }
+  const novoStatus = analise.data;
+
+  // Um montador só inicia (ou volta para pendente) a própria montagem.
+  // Concluir exige foto e as duas assinaturas e passa por
+  // concluirComProvaAction -- sem esta checagem, um "CONCLUIDO" enviado
+  // direto para a ação fechava o serviço sem comprovante nenhum.
+  if (
+    session.role === "MONTADOR" &&
+    !STATUS_PERMITIDOS_MONTADOR.includes(novoStatus)
+  ) {
+    redirect(
+      `${caminho}?erro=${encodeURIComponent(
+        "Para concluir a montagem, envie a foto do produto montado e as assinaturas."
+      )}`
+    );
+    return;
+  }
 
   await prisma.montagem.update({
     where: { id },
@@ -310,7 +369,7 @@ export async function atualizarStatusAction(
   });
 
   revalidarMontagem(id);
-  redirect(caminhoDetalhe(session.role, id));
+  redirect(caminho);
 }
 
 // Cloud Function do CentralSync que recebe a confirmação de montagem (fica
@@ -323,6 +382,90 @@ export async function atualizarStatusAction(
 // o envio simplesmente falha (ver avisarCentralSync).
 const CENTRALSYNC_CONFIRMATION_URL = "https://us-central1-centralsync-c5b50.cloudfunctions.net/receiveMontagemConfirmation";
 const CENTRALSYNC_SHARED_KEY = process.env.MONTAFACIL_TO_CENTRALSYNC_KEY;
+
+// Por que o envio não foi, em texto que dá para mostrar ao admin.
+//
+// Isto era um `boolean`, e toda causa possível -- chave que não existe no
+// servidor, chave recusada do outro lado, função fria estourando o tempo,
+// entrega que não existe mais lá -- virava a mesma frase "tente de novo em
+// instantes" na tela. Quem estava com o celular na mão tentava de novo para
+// sempre, e quem fosse investigar depois não tinha por onde começar: o
+// status só aparecia num console.warn do servidor.
+type ResultadoEnvioCentralSync = { ok: true } | { ok: false; motivo: string };
+
+// Uma tentativa dá conta de um CentralSync já aquecido; o dobro disso é para
+// a partida a frio. A Cloud Function de lá é chamada poucas vezes por dia,
+// ou seja, quase sempre parte fria -- e partida fria + gravação passava dos
+// 10s que ficavam aqui, o que chegava ao admin como falha sem motivo. O teto
+// da página (maxDuration em app/admin/page.tsx e
+// app/admin/montagens/[id]/page.tsx) cobre as duas tentativas com folga.
+const TEMPO_LIMITE_CENTRALSYNC_MS = 12_000;
+
+function motivoDaRecusaCentralSync(status: number) {
+  if (status === 401 || status === 403) {
+    return `O CentralSync recusou a chave de integração (erro ${status}). A chave daqui (MONTAFACIL_TO_CENTRALSYNC_KEY) precisa ser igual ao segredo MONTAFACIL_API_KEY cadastrado lá. Tentar de novo não resolve.`;
+  }
+  if (status === 404) {
+    return "O CentralSync não achou essa entrega (erro 404). Confira se o pedido ainda existe lá com esse mesmo número.";
+  }
+  if (status === 413) {
+    return "O comprovante ficou grande demais para o CentralSync aceitar (erro 413). Envie uma foto menor e recolha as assinaturas.";
+  }
+  if (status >= 500) {
+    return `O CentralSync está com problema no servidor dele (erro ${status}). Tente de novo em alguns minutos.`;
+  }
+  return `O CentralSync recusou a confirmação (erro ${status}).`;
+}
+
+type TentativaCentralSync =
+  | { ok: true }
+  | { ok: false; motivo: string; repetir: boolean };
+
+async function tentarAvisarCentralSync(
+  corpo: string,
+  chave: string
+): Promise<TentativaCentralSync> {
+  try {
+    const resposta = await fetch(CENTRALSYNC_CONFIRMATION_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-montafacil-key": chave,
+      },
+      body: corpo,
+      // Quem espera por esta chamada é o admin, na tela da montagem. Um
+      // CentralSync fora do ar não pode deixar a tela travada.
+      signal: AbortSignal.timeout(TEMPO_LIMITE_CENTRALSYNC_MS),
+    });
+    if (resposta.ok) return { ok: true };
+
+    const detalhe = await resposta.text().catch(() => "");
+    console.warn(
+      "CentralSync recusou a confirmação de montagem:",
+      resposta.status,
+      detalhe.slice(0, 300)
+    );
+    return {
+      ok: false,
+      motivo: motivoDaRecusaCentralSync(resposta.status),
+      // Só o que pode melhorar sozinho é repetido. Chave recusada e entrega
+      // inexistente respondem igual na segunda vez -- repetir só faria o
+      // admin esperar o dobro pela mesma resposta.
+      repetir: resposta.status >= 500,
+    };
+  } catch (e) {
+    const nome = (e as { name?: string })?.name;
+    const expirou = nome === "TimeoutError" || nome === "AbortError";
+    console.warn("Falha ao avisar o CentralSync sobre a montagem concluída:", e);
+    return {
+      ok: false,
+      motivo: expirou
+        ? `O CentralSync não respondeu em ${TEMPO_LIMITE_CENTRALSYNC_MS / 1000}s, nas duas tentativas. Ele pode estar lento ou fora do ar -- tente de novo em alguns minutos.`
+        : "Não consegui alcançar o CentralSync (falha de rede entre os dois sistemas). Tente de novo em alguns minutos.",
+      repetir: true,
+    };
+  }
+}
 
 // Chamado só pelo admin, pelo botão "Enviar ao CentralSync" (ver
 // confirmarEnvioCentralSyncAction): o montador concluir aqui NÃO dispara
@@ -337,40 +480,36 @@ async function avisarCentralSync(
   customerSignature: string,
   photo: string,
   reason?: string
-): Promise<boolean> {
+): Promise<ResultadoEnvioCentralSync> {
   if (!CENTRALSYNC_SHARED_KEY) {
     console.warn("MONTAFACIL_TO_CENTRALSYNC_KEY não configurada -- não é possível avisar o CentralSync.");
-    return false;
+    return {
+      ok: false,
+      motivo:
+        "A chave de integração com o CentralSync não está configurada no servidor (MONTAFACIL_TO_CENTRALSYNC_KEY). Isso é configuração, não adianta insistir -- avise quem cuida do sistema.",
+    };
   }
-  try {
-    const resposta = await fetch(CENTRALSYNC_CONFIRMATION_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-montafacil-key": CENTRALSYNC_SHARED_KEY,
-      },
-      body: JSON.stringify({
-        deliveryId,
-        montadorNome,
-        assemblerSignature,
-        customerSignature,
-        photo,
-        ...(reason ? { reason } : {}),
-      }),
-      // Quem espera por esta chamada é o admin, na tela da montagem. Um
-      // CentralSync fora do ar não pode deixar a tela travada: desiste em
-      // 10s e o admin tenta de novo pelo mesmo botão.
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!resposta.ok) {
-      console.warn("CentralSync recusou a confirmação de montagem:", resposta.status);
-      return false;
-    }
-    return true;
-  } catch (e) {
-    console.warn("Falha ao avisar o CentralSync sobre a montagem concluída:", e);
-    return false;
+
+  const corpo = JSON.stringify({
+    deliveryId,
+    montadorNome,
+    assemblerSignature,
+    customerSignature,
+    photo,
+    ...(reason ? { reason } : {}),
+  });
+
+  // Reenviar é seguro: do outro lado o aviso é gravado pelo id da entrega,
+  // então a segunda tentativa sobrescreve a primeira em vez de duplicar
+  // (mesma garantia que sustenta o botão "Reenviar ao CentralSync").
+  let ultimoMotivo = "Não consegui avisar o CentralSync agora. Tente de novo em alguns minutos.";
+  for (let tentativa = 1; tentativa <= 2; tentativa++) {
+    const resultado = await tentarAvisarCentralSync(corpo, CENTRALSYNC_SHARED_KEY);
+    if (resultado.ok) return { ok: true };
+    ultimoMotivo = resultado.motivo;
+    if (!resultado.repetir) break;
   }
+  return { ok: false, motivo: ultimoMotivo };
 }
 
 // Salva o comprovante da montagem (foto do produto montado + assinaturas) e
@@ -450,6 +589,7 @@ export async function concluirComProvaAction(id: string, formData: FormData) {
   }
 
   const jaEstavaConcluida = montagem.status === "CONCLUIDO";
+  const fotoAnterior = montagem.fotoProdutoUrl;
 
   await prisma.montagem.update({
     where: { id },
@@ -461,6 +601,11 @@ export async function concluirComProvaAction(id: string, formData: FormData) {
       ...(assinaturaCliente ? { assinaturaCliente } : {}),
     },
   });
+
+  // Foto trocada: some com a anterior em vez de deixá-la órfã no Blob.
+  if (fotoUrl && fotoAnterior && fotoAnterior !== fotoUrl) {
+    await apagarArquivo(fotoAnterior);
+  }
 
   // Concluir aqui NÃO avisa o CentralSync. Quem monta é o funcionário, mas
   // quem responde pela empresa perante a loja é o admin: a montagem
@@ -492,10 +637,14 @@ export async function concluirComProvaAction(id: string, formData: FormData) {
 // quem clica, e não dá para forjar um destino de redirecionamento.
 export async function confirmarEnvioCentralSyncAction(
   id: string,
-  origem: "painel" | "montagem",
+  origemBruta: string,
   formData?: FormData
 ) {
   await requireAdmin();
+
+  // Valor de fora: se não for um dos dois destinos previstos, cai no da
+  // tela da montagem em vez de virar um redirecionamento arbitrário.
+  const origem = OrigemEnvioSchema.safeParse(origemBruta).data ?? "montagem";
 
   const montagem = await prisma.montagem.findUnique({
     where: { id },
@@ -534,7 +683,7 @@ export async function confirmarEnvioCentralSyncAction(
     return;
   }
 
-  const sucesso = await avisarCentralSync(
+  const envio = await avisarCentralSync(
     montagem.numeroPedido,
     montagem.montador?.nome ?? null,
     montagem.assinaturaMontador || "",
@@ -543,8 +692,11 @@ export async function confirmarEnvioCentralSyncAction(
     motivo || undefined
   );
 
-  if (!sucesso) {
-    comErro("Não consegui avisar o CentralSync agora. Tente de novo em instantes.");
+  // A mensagem que sobe para a tela diz o que aconteceu de verdade (chave,
+  // tempo esgotado, recusa do outro lado). A montagem continua na fila do
+  // painel de qualquer jeito -- nada é marcado como enviado sem confirmação.
+  if (!envio.ok) {
+    comErro(envio.motivo);
     return;
   }
 
@@ -560,8 +712,6 @@ export async function confirmarEnvioCentralSyncAction(
   );
 }
 
-const TIPOS_OCORRENCIA = ["CLIENTE_AUSENTE", "PECA_DANIFICADA", "REAGENDAR", "OUTRO"] as const;
-
 type ResultadoOcorrencia =
   | { ok: true; url: string | null; aviso?: string }
   | { ok: false; erro: string };
@@ -576,8 +726,7 @@ export async function registrarOcorrenciaAction(
   id: string,
   formData: FormData
 ): Promise<ResultadoOcorrencia> {
-  const session = await getSession();
-  if (!session) redirect("/login");
+  const session = await requireUsuario();
 
   const montagem = await prisma.montagem.findUnique({
     where: { id },
@@ -588,11 +737,11 @@ export async function registrarOcorrenciaAction(
     return { ok: false, erro: "Você não tem acesso a esta montagem." };
   }
 
-  const tipoBruto = String(formData.get("tipo") || "");
-  if (!TIPOS_OCORRENCIA.includes(tipoBruto as (typeof TIPOS_OCORRENCIA)[number])) {
+  const tipoAnalise = TipoOcorrenciaSchema.safeParse(String(formData.get("tipo") || ""));
+  if (!tipoAnalise.success) {
     return { ok: false, erro: "Selecione o que aconteceu na visita." };
   }
-  const tipo = tipoBruto as (typeof TIPOS_OCORRENCIA)[number];
+  const tipo = tipoAnalise.data;
   const observacao = String(formData.get("observacao") || "").trim();
 
   let fotoUrl: string | undefined;
@@ -654,15 +803,20 @@ export async function registrarOcorrenciaAction(
   return { ok: true, url: linkWhatsapp(montagem.loja.telefone, mensagem) };
 }
 
+// A inversão é feita no próprio UPDATE (`NOT "coluna"`), e não com
+// ler-depois-escrever: dois cliques quase simultâneos liam o mesmo valor e
+// gravavam o mesmo resultado, então um dos cliques simplesmente sumia. Como
+// é SQL cru, `updatedAt` (que o Prisma preenche sozinho no update normal)
+// precisa ser escrito à mão.
 export async function alternarPagamentoLojaAction(id: string) {
   await requireAdmin();
-  const montagem = await prisma.montagem.findUnique({ where: { id } });
-  if (!montagem) redirect("/admin/montagens");
 
-  await prisma.montagem.update({
-    where: { id },
-    data: { pagoPelaLoja: !montagem!.pagoPelaLoja },
-  });
+  const linhas = await prisma.$executeRaw`
+    UPDATE "Montagem"
+       SET "pagoPelaLoja" = NOT "pagoPelaLoja", "updatedAt" = NOW()
+     WHERE "id" = ${id}
+  `;
+  if (linhas === 0) redirect("/admin/montagens");
 
   revalidarMontagem(id);
   redirect(`/admin/montagens/${id}`);
@@ -670,13 +824,13 @@ export async function alternarPagamentoLojaAction(id: string) {
 
 export async function alternarPagamentoMontadorAction(id: string) {
   await requireAdmin();
-  const montagem = await prisma.montagem.findUnique({ where: { id } });
-  if (!montagem) redirect("/admin/montagens");
 
-  await prisma.montagem.update({
-    where: { id },
-    data: { pagoAoMontador: !montagem!.pagoAoMontador },
-  });
+  const linhas = await prisma.$executeRaw`
+    UPDATE "Montagem"
+       SET "pagoAoMontador" = NOT "pagoAoMontador", "updatedAt" = NOW()
+     WHERE "id" = ${id}
+  `;
+  if (linhas === 0) redirect("/admin/montagens");
 
   // O pagamento afeta diretamente o que o montador vê no painel dele (o
   // valor "a receber" some da lista assim que marcado como pago).
@@ -687,7 +841,27 @@ export async function alternarPagamentoMontadorAction(id: string) {
 export async function excluirMontagemAction(id: string) {
   await requireAdmin();
 
+  // Lê os arquivos antes de apagar a linha: depois do delete não há mais
+  // como saber o que ficou órfão no Blob. As ocorrências somem por cascata
+  // no banco, mas as fotos delas não.
+  const arquivos = await prisma.montagem.findUnique({
+    where: { id },
+    select: {
+      fotoProdutoUrl: true,
+      manualUrl: true,
+      ocorrencias: { select: { fotoUrl: true } },
+    },
+  });
+
   await prisma.montagem.delete({ where: { id } });
+
+  if (arquivos) {
+    await apagarArquivos([
+      arquivos.fotoProdutoUrl,
+      arquivos.manualUrl,
+      ...arquivos.ocorrencias.map((o) => o.fotoUrl),
+    ]);
+  }
 
   revalidarMontagem(id);
   redirect(

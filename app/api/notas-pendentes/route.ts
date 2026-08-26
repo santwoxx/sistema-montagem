@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { normalizarCnpj } from "@/lib/cnpj";
+import { ipDoPedido, registrarTentativa } from "@/lib/limite";
 
 // Endpoint público chamado pelo CentralSync (outro sistema, sem sessão de
 // login aqui) quando um pedido é designado ao Dario por lá. Não cria uma
@@ -24,6 +25,12 @@ import { normalizarCnpj } from "@/lib/cnpj";
 // conclusão, que marcaria a entrega original como montada de novo.
 
 const ALLOWED_ORIGIN = "https://centralsync.vercel.app";
+
+// Teto de chamadas por origem. O CentralSync manda uma nota por pedido
+// designado -- 60 por minuto é muito acima do uso real e ainda assim evita
+// que uma chave vazada (ou um laço com defeito do outro lado) encha a fila
+// do admin. Ver as ressalvas de lib/limite.ts sobre limite por instância.
+const LIMITE_API = { limite: 60, janelaMs: 60 * 1000 };
 const TAMANHO_MAXIMO_CAMPO = 300;
 const TAMANHO_MAXIMO_TEXTO_LONGO = 2000;
 const TAMANHO_MAXIMO_URL = 2000;
@@ -86,6 +93,24 @@ function numeroPositivoValido(valor: unknown): number | undefined {
 }
 
 export async function POST(request: Request) {
+  const limite = registrarTentativa(
+    `notas-pendentes:${ipDoPedido(request.headers)}`,
+    LIMITE_API
+  );
+  if (!limite.permitido) {
+    return new Response(
+      JSON.stringify({ ok: false, erro: "Muitas chamadas seguidas. Tente novamente em instantes." }),
+      {
+        status: 429,
+        headers: {
+          "Content-Type": "application/json",
+          "Retry-After": String(limite.esperarSegundos),
+          ...corsHeaders(),
+        },
+      }
+    );
+  }
+
   const chaveEsperada = process.env.CENTRALSYNC_API_KEY;
 
   if (!chaveEsperada || !chaveConfere(request.headers.get("x-centralsync-key"), chaveEsperada)) {
@@ -138,7 +163,7 @@ export async function POST(request: Request) {
   // 200 nos dois casos, senão o CentralSync fica tentando de novo à toa.
   if (numeroPedido) {
     const [notaExistente, montagemExistente] = await Promise.all([
-      prisma.notaPendente.findFirst({ where: { numeroPedido }, select: { id: true } }),
+      prisma.notaPendente.findUnique({ where: { numeroPedido }, select: { id: true } }),
       prisma.montagem.findFirst({ where: { numeroPedido }, select: { id: true } }),
     ]);
     if (notaExistente) {
@@ -163,22 +188,41 @@ export async function POST(request: Request) {
     montadorSugeridoId = montador?.id;
   }
 
-  const notaPendente = await prisma.notaPendente.create({
-    data: {
-      numeroPedido,
-      clienteNome,
-      clienteTelefone,
-      clienteEndereco,
-      descricaoServico,
-      valorServico,
-      dataAgendada,
-      observacoes,
-      fotoReferenciaUrl,
-      montadorSugeridoId,
-      lojaNomeSugerida,
-      lojaCnpjSugerido,
-    },
-  });
+  try {
+    const notaPendente = await prisma.notaPendente.create({
+      data: {
+        numeroPedido,
+        clienteNome,
+        clienteTelefone,
+        clienteEndereco,
+        descricaoServico,
+        valorServico,
+        dataAgendada,
+        observacoes,
+        fotoReferenciaUrl,
+        montadorSugeridoId,
+        lojaNomeSugerida,
+        lojaCnpjSugerido,
+      },
+    });
 
-  return jsonResponse(201, { ok: true, id: notaPendente.id });
+    return jsonResponse(201, { ok: true, id: notaPendente.id });
+  } catch (error) {
+    // Dois POSTs do mesmo pedido chegando juntos passam os dois pela
+    // checagem de repetição acima antes de qualquer um gravar. Quem separa
+    // é o índice único de numeroPedido: o perdedor cai aqui e responde
+    // como repetido, igual ao caminho de cima -- e não com erro 500, que
+    // faria o CentralSync ficar tentando de novo à toa.
+    const codigo = (error as { code?: string })?.code;
+    if (codigo === "P2002" && numeroPedido) {
+      const existente = await prisma.notaPendente.findUnique({
+        where: { numeroPedido },
+        select: { id: true },
+      });
+      if (existente) {
+        return jsonResponse(200, { ok: true, id: existente.id, duplicado: true });
+      }
+    }
+    throw error;
+  }
 }

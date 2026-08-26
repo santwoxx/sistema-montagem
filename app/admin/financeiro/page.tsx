@@ -1,28 +1,38 @@
+import Form from "next/form";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { Badge, Button, Card, Field, Input, PageHeader, Select, StatCard, Vazio } from "@/components/ui";
-import { somarValorDevidoPelaLoja } from "@/lib/financeiro";
+import { emCentavos, somarDinheiro, somarValorDevidoPelaLoja } from "@/lib/financeiro";
 import { formatarData, formatarMoeda } from "@/lib/format";
+import { intervaloDoMes, mesAtual } from "@/lib/datas";
 import type { Prisma } from "@prisma/client";
-
-function mesAtual() {
-  const agora = new Date();
-  return `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}`;
-}
 
 export default async function FinanceiroPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mes?: string; lojaId?: string; montadorId?: string }>;
+  searchParams: Promise<{
+    mes?: string;
+    lojaId?: string;
+    montadorId?: string;
+    base?: string;
+  }>;
 }) {
   const params = await searchParams;
   const mes = params.mes ?? mesAtual();
   const lojaId = params.lojaId ?? "";
   const montadorId = params.montadorId ?? "";
 
-  const [ano, mesNumero] = mes.split("-").map(Number);
-  const inicio = new Date(ano, (mesNumero || 1) - 1, 1);
-  const fim = new Date(ano, mesNumero || 1, 1);
+  // Qual data define "o mês" de uma montagem. Esta tela sempre contou pela
+  // data de cadastro e a do montador sempre contou pela data de conclusão --
+  // então os dois olhavam "agosto" e viam números diferentes, sem nada na
+  // tela explicando por quê. O padrão de cada tela continua o mesmo; o que
+  // mudou é que agora dá para alinhar as duas e está escrito qual é a base.
+  const base = params.base === "conclusao" ? "conclusao" : "cadastro";
+  const campoData = base === "conclusao" ? "concluidoEm" : "createdAt";
+
+  // Limites do mês no fuso do negócio (ver lib/datas.ts): com o servidor em
+  // UTC, o mês começava e terminava três horas cedo demais.
+  const { inicio, fim } = intervaloDoMes(mes);
 
   const [lojas, montadores] = await Promise.all([
     prisma.loja.findMany({ orderBy: { nome: "asc" } }),
@@ -31,7 +41,9 @@ export default async function FinanceiroPage({
 
   const where: Prisma.MontagemWhereInput = {
     status: { not: "CANCELADO" },
-    createdAt: { gte: inicio, lt: fim },
+    // Por conclusão, `concluidoEm` é nulo em tudo que não foi concluído --
+    // o próprio filtro de intervalo já deixa essas montagens de fora.
+    [campoData]: { gte: inicio, lt: fim },
   };
   if (lojaId) where.lojaId = lojaId;
   if (montadorId) where.montadorId = montadorId;
@@ -39,34 +51,61 @@ export default async function FinanceiroPage({
   const montagens = await prisma.montagem.findMany({
     where,
     orderBy: { createdAt: "desc" },
-    include: { loja: true, montador: true },
+    // Só o que a tabela e os totais usam -- sem isso as assinaturas em
+    // base64 de todas as montagens do mês vinham junto.
+    select: {
+      id: true,
+      clienteNome: true,
+      createdAt: true,
+      concluidoEm: true,
+      valorServico: true,
+      valorMontador: true,
+      valorAssistencia: true,
+      pagoPelaLoja: true,
+      pagoAoMontador: true,
+      loja: { select: { nome: true } },
+      montador: { select: { nome: true } },
+    },
   });
 
   // Receita da empresa != valor das notas: a empresa fica com o acerto
   // padrão sobre a nota mais a assistência da loja (ver lib/financeiro.ts),
   // enquanto a comissão do montador sai sobre o valor cheio da nota.
-  const totalNotas = montagens.reduce((soma, m) => soma + m.valorServico, 0);
+  const totalNotas = somarDinheiro(montagens.map((m) => m.valorServico));
   const receitaEmpresa = somarValorDevidoPelaLoja(montagens);
-  const totalMontador = montagens.reduce((soma, m) => soma + m.valorMontador, 0);
-  const totalEmpresa = receitaEmpresa - totalMontador;
+  const totalMontador = somarDinheiro(montagens.map((m) => m.valorMontador));
+  const totalEmpresa = emCentavos(receitaEmpresa - totalMontador);
   const totalPendenteLoja = somarValorDevidoPelaLoja(
     montagens.filter((m) => !m.pagoPelaLoja)
   );
-  const totalPendenteMontador = montagens
-    .filter((m) => !m.pagoAoMontador)
-    .reduce((soma, m) => soma + m.valorMontador, 0);
+  const totalPendenteMontador = somarDinheiro(
+    montagens.filter((m) => !m.pagoAoMontador).map((m) => m.valorMontador)
+  );
 
   return (
     <div>
       <PageHeader
         titulo="Financeiro"
-        descricao="Resumo de valores por período, loja e montador."
+        descricao={
+          base === "conclusao"
+            ? "Resumo por período, loja e montador — contando pela data de conclusão."
+            : "Resumo por período, loja e montador — contando pela data de cadastro."
+        }
       />
 
       <Card className="mb-6">
-        <form className="grid gap-3 sm:grid-cols-4">
+        <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <Field label="Mês">
             <Input type="month" name="mes" defaultValue={mes} />
+          </Field>
+          <Field
+            label="Contar pelo"
+            hint="Use “conclusão” para bater com o financeiro dos montadores."
+          >
+            <Select name="base" defaultValue={base}>
+              <option value="cadastro">Cadastro da montagem</option>
+              <option value="conclusao">Conclusão do serviço</option>
+            </Select>
           </Field>
           <Field label="Loja">
             <Select name="lojaId" defaultValue={lojaId}>
@@ -143,7 +182,9 @@ export default async function FinanceiroPage({
           <table className="w-full min-w-[720px] text-sm">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                <th className="px-4 py-3">Data</th>
+                <th className="px-4 py-3">
+                  {base === "conclusao" ? "Concluída em" : "Cadastrada em"}
+                </th>
                 <th className="px-4 py-3">Cliente</th>
                 <th className="px-4 py-3">Loja</th>
                 <th className="px-4 py-3">Montador</th>
@@ -156,7 +197,9 @@ export default async function FinanceiroPage({
             <tbody>
               {montagens.map((m) => (
                 <tr key={m.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
-                  <td className="px-4 py-3 text-gray-500">{formatarData(m.createdAt)}</td>
+                  <td className="px-4 py-3 text-gray-500">
+                    {formatarData(base === "conclusao" ? m.concluidoEm : m.createdAt)}
+                  </td>
                   <td className="px-4 py-3 font-medium text-gray-900">
                     <Link href={`/admin/montagens/${m.id}`} className="hover:underline">
                       {m.clienteNome}

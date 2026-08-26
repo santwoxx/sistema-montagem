@@ -4,13 +4,12 @@ import { prisma } from "@/lib/prisma";
 import { Badge, Card, PageHeader, StatCard, Vazio } from "@/components/ui";
 import { Estrelas } from "@/components/Estrelas";
 import { formatarData, formatarMoeda, STATUS_COLOR, STATUS_LABEL } from "@/lib/format";
+import { inicioDoMesLocal } from "@/lib/datas";
 
 export default async function PainelMontadorPage() {
   const session = await requireMontador();
 
-  const inicioMes = new Date();
-  inicioMes.setDate(1);
-  inicioMes.setHours(0, 0, 0, 0);
+  const inicioMes = inicioDoMesLocal();
 
   const [
     ativas,
@@ -24,13 +23,29 @@ export default async function PainelMontadorPage() {
     prisma.montagem.findMany({
       where: { montadorId: session.sub, status: { in: ["PENDENTE", "EM_ANDAMENTO"] } },
       orderBy: [{ dataAgendada: "asc" }, { createdAt: "asc" }],
-      include: { loja: true },
+      select: {
+        id: true,
+        clienteNome: true,
+        dataAgendada: true,
+        valorServico: true,
+        valorMontador: true,
+        status: true,
+        loja: { select: { nome: true } },
+      },
     }),
     prisma.montagem.findMany({
       where: { montadorId: session.sub, status: "CONCLUIDO" },
       orderBy: { concluidoEm: "desc" },
       take: 5,
-      include: { loja: true },
+      select: {
+        id: true,
+        clienteNome: true,
+        concluidoEm: true,
+        valorServico: true,
+        valorMontador: true,
+        pagoAoMontador: true,
+        loja: { select: { nome: true } },
+      },
     }),
     prisma.montagem.aggregate({
       _sum: { valorMontador: true },
