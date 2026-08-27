@@ -146,9 +146,7 @@ export function NovaMontagemForm({
     setNumeroPedido(nota.numeroPedido ?? "");
     setDescricaoServico(nota.descricaoServico);
     setObservacoes(nota.observacoes ?? "");
-    if ((nota as any).notaUrl) {
-      setNotaUrl((nota as any).notaUrl);
-    }
+    if (nota.notaUrl) setNotaUrl(nota.notaUrl);
     setDataAgendada(paraInputDate(nota.dataAgendada));
     if (nota.valorServico) {
       setValorServico(nota.valorServico.toLocaleString("pt-BR", { minimumFractionDigits: 2 }));

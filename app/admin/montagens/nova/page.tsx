@@ -35,6 +35,7 @@ export default async function NovaMontagemPage({
     dataAgendada: n.dataAgendada ? n.dataAgendada.toISOString() : null,
     observacoes: n.observacoes,
     fotoReferenciaUrl: n.fotoReferenciaUrl,
+    notaUrl: n.notaUrl,
     montadorSugeridoId: n.montadorSugeridoId,
     montadorSugeridoNome: n.montadorSugerido?.nome ?? null,
     lojaNomeSugerida: n.lojaNomeSugerida,

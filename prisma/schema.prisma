@@ -130,7 +130,7 @@ model Montagem {
   manualUrl         String?
   manualNomeArquivo String?
   manualTipo        String?
-  
+
   // Foto original da nota fiscal (quando importada/lida).
   notaUrl           String?
 
@@ -192,7 +192,7 @@ model NotaPendente {
   // Foto de referência do produto (não é o comprovante de conclusão) —
   // vira o "manual/instrução" da montagem quando a nota é usada.
   fotoReferenciaUrl String?
-  
+
   // Foto da nota fiscal de onde estes dados foram lidos
   notaUrl           String?
 

@@ -16,6 +16,7 @@ export type NotaPendenteResumo = {
   dataAgendada: string | null;
   observacoes: string | null;
   fotoReferenciaUrl: string | null;
+  notaUrl: string | null;
   montadorSugeridoId: string | null;
   montadorSugeridoNome: string | null;
   lojaNomeSugerida: string | null;

@@ -537,15 +537,15 @@ export async function concluirComProvaAction(id: string, formData: FormData) {
     redirect(`${caminho}?erro=${encodeURIComponent(mensagem)}`);
 
   const exigirAssinaturas = session.role === "MONTADOR";
-  
+
   const fotosRaw = formData.getAll("fotos");
   const fotos = fotosRaw.filter((f): f is File => f instanceof File && f.size > 0);
   const temFotoNova = fotos.length > 0;
-  
+
   const assinaturaMontador = String(formData.get("assinaturaMontador") || "").trim();
   const assinaturaCliente = String(formData.get("assinaturaCliente") || "").trim();
 
-  if (!temFotoNova && !montagem.fotoProdutoUrl && (montagem.fotosProdutoUrls?.length ?? 0) === 0) {
+  if (!temFotoNova && !montagem.fotoProdutoUrl && montagem.fotosProdutoUrls.length === 0) {
     erro("Envie uma foto do produto montado antes de concluir.");
     return;
   }
@@ -584,7 +584,7 @@ export async function concluirComProvaAction(id: string, formData: FormData) {
     return;
   }
 
-  let fotoUrls: string[] = [];
+  const fotoUrls: string[] = [];
   if (temFotoNova) {
     for (const foto of fotos) {
       const envio = await enviarArquivo(
@@ -600,17 +600,15 @@ export async function concluirComProvaAction(id: string, formData: FormData) {
   }
 
   const jaEstavaConcluida = montagem.status === "CONCLUIDO";
-  // Evitar apagar fotoAnterior se apenas anexando mais
-  const fotoAnterior = montagem.fotoProdutoUrl;
 
   await prisma.montagem.update({
     where: { id },
     data: {
       status: "CONCLUIDO",
       concluidoEm: montagem.concluidoEm ?? new Date(),
-      ...(fotoUrls.length > 0 ? { 
+      ...(fotoUrls.length > 0 ? {
         fotoProdutoUrl: fotoUrls[0], // fallback para o CentralSync
-        fotosProdutoUrls: { push: fotoUrls } 
+        fotosProdutoUrls: { push: fotoUrls }
       } : {}),
       ...(assinaturaMontador ? { assinaturaMontador } : {}),
       ...(assinaturaCliente ? { assinaturaCliente } : {}),
