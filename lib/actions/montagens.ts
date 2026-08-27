@@ -545,7 +545,7 @@ export async function concluirComProvaAction(id: string, formData: FormData) {
   const assinaturaMontador = String(formData.get("assinaturaMontador") || "").trim();
   const assinaturaCliente = String(formData.get("assinaturaCliente") || "").trim();
 
-  if (!temFotoNova && !montagem.fotoProdutoUrl && montagem.fotosProdutoUrls.length === 0) {
+  if (!temFotoNova && !montagem.fotoProdutoUrl && (montagem.fotosProdutoUrls?.length ?? 0) === 0) {
     erro("Envie uma foto do produto montado antes de concluir.");
     return;
   }

@@ -184,9 +184,9 @@ export default async function MontagemDetalhePage({
         <p className="mb-3 text-sm font-medium text-slate-500">
           Comprovante de conclusão
         </p>
-        {montagem.fotosProdutoUrls.length > 0 ? (
+        {(montagem.fotosProdutoUrls?.length ?? 0) > 0 ? (
           <div className="mb-4 grid gap-4 sm:grid-cols-2">
-            {montagem.fotosProdutoUrls.map((url, i) => (
+            {montagem.fotosProdutoUrls!.map((url, i) => (
               <a key={url} href={url} target="_blank" rel="noreferrer">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
