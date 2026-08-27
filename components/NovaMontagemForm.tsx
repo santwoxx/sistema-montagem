@@ -66,6 +66,7 @@ export function NovaMontagemForm({
     status?: string;
     manualUrl?: string;
     manualNomeArquivo?: string;
+    notaUrl?: string;
   };
   modoEdicao?: boolean;
 }) {
@@ -89,6 +90,7 @@ export function NovaMontagemForm({
   );
   const [dataAgendada, setDataAgendada] = useState(valoresIniciais?.dataAgendada ?? "");
   const [observacoes, setObservacoes] = useState(valoresIniciais?.observacoes ?? "");
+  const [notaUrl, setNotaUrl] = useState(valoresIniciais?.notaUrl ?? "");
   const [notaPendenteId, setNotaPendenteId] = useState("");
   // O "Nº do pedido" é um campo de texto comum na tela, mas quando vale
   // "del-…" ele é a chave que liga esta montagem à entrega no CentralSync:
@@ -144,6 +146,9 @@ export function NovaMontagemForm({
     setNumeroPedido(nota.numeroPedido ?? "");
     setDescricaoServico(nota.descricaoServico);
     setObservacoes(nota.observacoes ?? "");
+    if ((nota as any).notaUrl) {
+      setNotaUrl((nota as any).notaUrl);
+    }
     setDataAgendada(paraInputDate(nota.dataAgendada));
     if (nota.valorServico) {
       setValorServico(nota.valorServico.toLocaleString("pt-BR", { minimumFractionDigits: 2 }));
@@ -249,6 +254,7 @@ export function NovaMontagemForm({
       className="space-y-6"
     >
       <input type="hidden" name="notaPendenteId" value={notaPendenteId} />
+      <input type="hidden" name="notaUrl" value={notaUrl} />
 
       {!modoEdicao && notasPendentes && notasPendentes.length > 0 ? (
         <NotasPendentesCard notas={notasPendentes} onUsar={usarNotaPendente} />
@@ -274,9 +280,26 @@ export function NovaMontagemForm({
               if (resultado.numeroPedido) setNumeroPedido(resultado.numeroPedido);
               if (resultado.descricaoServico) setDescricaoServico(resultado.descricaoServico);
               if (resultado.valorServico) setValorServico(resultado.valorServico);
+              if (resultado.notaUrl) setNotaUrl(resultado.notaUrl);
             }}
             onLojaResolvida={aplicarLojaResolvida}
           />
+        </Card>
+      ) : null}
+      
+      {notaUrl ? (
+        <Card className="bg-sky-50 border-sky-100">
+          <p className="text-sm font-medium text-sky-900">
+            ✅ Foto da nota anexada
+          </p>
+          <a
+            href={notaUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-1 inline-flex text-sm text-sky-700 hover:underline"
+          >
+            Visualizar arquivo importado
+          </a>
         </Card>
       ) : null}
 

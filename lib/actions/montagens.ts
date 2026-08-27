@@ -122,6 +122,7 @@ export async function criarMontagemAction(formData: FormData) {
   const numeroPedido = String(formData.get("numeroPedido") || "").trim();
   const descricaoServico = String(formData.get("descricaoServico") || "").trim();
   const observacoes = String(formData.get("observacoes") || "").trim();
+  const notaUrl = String(formData.get("notaUrl") || "").trim();
 
   const valorServico = arredondar(paraNumero(formData.get("valorServico")));
   const percentualAssistencia = paraPercentual(formData.get("percentualAssistencia"));
@@ -176,6 +177,7 @@ export async function criarMontagemAction(formData: FormData) {
       valorMontador,
       feitoPorAdm,
       dataAgendada,
+      notaUrl: notaUrl || null,
       ...manualDados,
     },
   });
@@ -208,6 +210,7 @@ export async function atualizarMontagemAction(id: string, formData: FormData) {
   const numeroPedido = String(formData.get("numeroPedido") || "").trim();
   const descricaoServico = String(formData.get("descricaoServico") || "").trim();
   const observacoes = String(formData.get("observacoes") || "").trim();
+  const notaUrl = String(formData.get("notaUrl") || "").trim();
   // Antes isto era um `as` direto no valor do formulário: um status
   // inventado atravessava até o Prisma e derrubava a tela com erro 500 em
   // vez de uma mensagem.
@@ -262,6 +265,7 @@ export async function atualizarMontagemAction(id: string, formData: FormData) {
       valorServico,
       percentualAssistencia,
       valorAssistencia,
+      notaUrl: notaUrl || null,
       ...manualDados,
       percentualMontador,
       valorMontador,
@@ -533,25 +537,30 @@ export async function concluirComProvaAction(id: string, formData: FormData) {
     redirect(`${caminho}?erro=${encodeURIComponent(mensagem)}`);
 
   const exigirAssinaturas = session.role === "MONTADOR";
-  const foto = formData.get("foto");
+  
+  const fotosRaw = formData.getAll("fotos");
+  const fotos = fotosRaw.filter((f): f is File => f instanceof File && f.size > 0);
+  const temFotoNova = fotos.length > 0;
+  
   const assinaturaMontador = String(formData.get("assinaturaMontador") || "").trim();
   const assinaturaCliente = String(formData.get("assinaturaCliente") || "").trim();
 
-  const temFotoNova = foto instanceof File && foto.size > 0;
-  if (!temFotoNova && !montagem.fotoProdutoUrl) {
+  if (!temFotoNova && !montagem.fotoProdutoUrl && montagem.fotosProdutoUrls.length === 0) {
     erro("Envie uma foto do produto montado antes de concluir.");
     return;
   }
   if (temFotoNova) {
-    if (!foto.type.startsWith("image/")) {
-      erro("O arquivo da foto precisa ser uma imagem.");
-      return;
-    }
-    if (foto.size > TAMANHO_MAXIMO_UPLOAD) {
-      erro(
-        `A foto é muito grande (máximo ${TAMANHO_MAXIMO_UPLOAD_TEXTO}). Tire outra pelo próprio celular, que o sistema reduz sozinho.`
-      );
-      return;
+    for (const foto of fotos) {
+      if (!foto.type.startsWith("image/")) {
+        erro("O arquivo da foto precisa ser uma imagem.");
+        return;
+      }
+      if (foto.size > TAMANHO_MAXIMO_UPLOAD) {
+        erro(
+          `Uma foto é muito grande (máximo ${TAMANHO_MAXIMO_UPLOAD_TEXTO}). Tire outra pelo próprio celular, que o sistema reduz sozinho.`
+        );
+        return;
+      }
     }
   }
 
@@ -575,20 +584,23 @@ export async function concluirComProvaAction(id: string, formData: FormData) {
     return;
   }
 
-  let fotoUrl: string | undefined;
+  let fotoUrls: string[] = [];
   if (temFotoNova) {
-    const envio = await enviarArquivo(
-      `montagens/${id}-${Date.now()}.${extensaoDe(foto)}`,
-      foto
-    );
-    if (!envio.ok) {
-      erro(envio.erro);
-      return;
+    for (const foto of fotos) {
+      const envio = await enviarArquivo(
+        `montagens/${id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.${extensaoDe(foto)}`,
+        foto
+      );
+      if (!envio.ok) {
+        erro(envio.erro);
+        return;
+      }
+      fotoUrls.push(envio.url);
     }
-    fotoUrl = envio.url;
   }
 
   const jaEstavaConcluida = montagem.status === "CONCLUIDO";
+  // Evitar apagar fotoAnterior se apenas anexando mais
   const fotoAnterior = montagem.fotoProdutoUrl;
 
   await prisma.montagem.update({
@@ -596,16 +608,18 @@ export async function concluirComProvaAction(id: string, formData: FormData) {
     data: {
       status: "CONCLUIDO",
       concluidoEm: montagem.concluidoEm ?? new Date(),
-      ...(fotoUrl ? { fotoProdutoUrl: fotoUrl } : {}),
+      ...(fotoUrls.length > 0 ? { 
+        fotoProdutoUrl: fotoUrls[0], // fallback para o CentralSync
+        fotosProdutoUrls: { push: fotoUrls } 
+      } : {}),
       ...(assinaturaMontador ? { assinaturaMontador } : {}),
       ...(assinaturaCliente ? { assinaturaCliente } : {}),
     },
   });
 
-  // Foto trocada: some com a anterior em vez de deixá-la órfã no Blob.
-  if (fotoUrl && fotoAnterior && fotoAnterior !== fotoUrl) {
-    await apagarArquivo(fotoAnterior);
-  }
+  // Foto trocada: não apagamos mais fotos antigas tão facilmente agora que são múltiplas,
+  // mas como o admin pode substituir a principal (fotoProdutoUrl), deixamos quieto
+  // para evitar apagar arquivos úteis.
 
   // Concluir aqui NÃO avisa o CentralSync. Quem monta é o funcionário, mas
   // quem responde pela empresa perante a loja é o admin: a montagem

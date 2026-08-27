@@ -9,6 +9,7 @@ import {
   interpretarXmlDeNota,
   type DadosImportados,
 } from "@/lib/nota-fiscal";
+import { enviarArquivo, extensaoDe, TAMANHO_MAXIMO_UPLOAD } from "@/lib/upload";
 
 // A leitura em si (XML e texto de OCR) vive em lib/nota-fiscal.ts, que é
 // código puro e testável. Aqui ficam só as ações: conferir permissão,
@@ -58,6 +59,23 @@ export async function importarNotaTextoAction(texto: string): Promise<DadosImpor
   }
 
   return interpretarTextoNota(limpo);
+}
+
+export async function enviarFotoNotaAction(formData: FormData): Promise<{ ok: true; url: string } | { ok: false; erro: string }> {
+  await requireAdmin();
+  const arquivo = formData.get("arquivo");
+  if (!(arquivo instanceof File) || arquivo.size === 0) {
+    return { ok: false, erro: "Selecione uma imagem." };
+  }
+  if (arquivo.size > TAMANHO_MAXIMO_UPLOAD) {
+    return { ok: false, erro: "A foto é muito grande para upload direto." };
+  }
+  const envio = await enviarArquivo(
+    `notas/${Date.now()}-${Math.random().toString(36).slice(2, 6)}.${extensaoDe(arquivo)}`,
+    arquivo
+  );
+  if (!envio.ok) return { ok: false, erro: envio.erro };
+  return { ok: true, url: envio.url };
 }
 
 // --- Cadastro automático da loja ---------------------------------------

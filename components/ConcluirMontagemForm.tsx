@@ -31,19 +31,19 @@ export function ConcluirMontagemForm({
   // A foto começa a ser reduzida assim que é escolhida, enquanto o montador
   // ainda está colhendo as assinaturas — quando ele toca em concluir, o
   // trabalho quase sempre já terminou.
-  const fotoPreparadaRef = useRef<Promise<File> | null>(null);
-  const [fotoNome, setFotoNome] = useState<string | null>(null);
+  const fotosPreparadasRef = useRef<Promise<File>[]>([]);
+  const [fotosNomes, setFotosNomes] = useState<string[]>([]);
   const [erroLocal, setErroLocal] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [, startTransition] = useTransition();
 
   function aoEscolherFoto(e: React.ChangeEvent<HTMLInputElement>) {
-    const arquivo = e.target.files?.[0] ?? null;
-    setFotoNome(arquivo?.name ?? null);
+    const arquivos = Array.from(e.target.files ?? []);
+    setFotosNomes(arquivos.map((a) => a.name));
     setErroLocal(null);
-    fotoPreparadaRef.current = arquivo
-      ? comprimirImagem(arquivo).catch(() => arquivo)
-      : null;
+    fotosPreparadasRef.current = arquivos.map((arquivo) =>
+      comprimirImagem(arquivo).catch(() => arquivo)
+    );
   }
 
   function validarEEnviar(e: React.FormEvent<HTMLFormElement>) {
@@ -53,8 +53,8 @@ export function ConcluirMontagemForm({
     // caía no "Algo deu errado" sem concluir nada.
     e.preventDefault();
 
-    if (!fotoPreparadaRef.current && !jaTemFoto) {
-      setErroLocal("Escolha a foto do produto montado.");
+    if (fotosPreparadasRef.current.length === 0 && !jaTemFoto) {
+      setErroLocal("Escolha pelo menos uma foto do produto montado.");
       return;
     }
     const montadorAssinou = !padMontadorRef.current?.isEmpty();
@@ -77,26 +77,24 @@ export function ConcluirMontagemForm({
     const assinaturaCliente = clienteAssinou
       ? padClienteRef.current?.toDataURL() ?? ""
       : "";
-    const fotoPreparada = fotoPreparadaRef.current;
+    const fotosPromises = fotosPreparadasRef.current;
 
     startTransition(async () => {
       try {
-        const foto = fotoPreparada ? await fotoPreparada : null;
+        const fotos = await Promise.all(fotosPromises);
 
-        // Foto acima do teto some antes de chegar na action (o Next recusa o
-        // corpo inteiro), e o catch lá embaixo culpava a internet por isso --
-        // no celular, justamente onde as fotos são maiores, a mensagem
-        // mandava conferir o sinal quando o problema era o tamanho.
-        if (foto && foto.size > TAMANHO_MAXIMO_FOTO) {
-          setEnviando(false);
-          setErroLocal(
-            `Essa foto ficou com ${(foto.size / (1024 * 1024)).toFixed(1)} MB, acima do limite de 3 MB, e não vai subir — não é a internet. Tire outra pelo próprio celular (a câmera do aplicativo de fotos costuma sair menor) ou escolha uma imagem menor.`
-          );
-          return;
+        for (const foto of fotos) {
+          if (foto.size > TAMANHO_MAXIMO_FOTO) {
+            setEnviando(false);
+            setErroLocal(
+              `A foto ${foto.name} ficou com ${(foto.size / (1024 * 1024)).toFixed(1)} MB, acima do limite de 3 MB, e não vai subir — não é a internet. Tire outra pelo próprio celular ou escolha uma imagem menor.`
+            );
+            return;
+          }
         }
 
         const formData = new FormData();
-        if (foto) formData.set("foto", foto);
+        fotos.forEach((foto) => formData.append("fotos", foto));
         formData.set("assinaturaMontador", assinaturaMontador);
         formData.set("assinaturaCliente", assinaturaCliente);
         await action(formData);
@@ -119,20 +117,21 @@ export function ConcluirMontagemForm({
 
       <div>
         <p className="mb-1.5 text-sm font-medium text-slate-700">
-          Foto do produto montado
+          Fotos do produto montado
         </p>
         <input
           type="file"
-          name="foto"
+          name="fotos"
           accept="image/*"
+          multiple
           // Sem `capture`: com ele o celular abria a câmera direto e não
           // deixava escolher uma foto já tirada (que é o caso de quem
           // fotografa na hora e só lança o serviço no sistema depois).
           onChange={aoEscolherFoto}
           className="w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-navy file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-navy-light"
         />
-        {fotoNome ? (
-          <p className="mt-1 text-xs text-slate-500">{fotoNome}</p>
+        {fotosNomes.length > 0 ? (
+          <p className="mt-1 text-xs text-slate-500">{fotosNomes.join(", ")}</p>
         ) : jaTemFoto ? (
           <p className="mt-1 text-xs text-slate-500">
             Já existe uma foto salva — só escolha outra se quiser substituí-la.

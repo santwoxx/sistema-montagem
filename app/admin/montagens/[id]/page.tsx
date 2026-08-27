@@ -184,7 +184,20 @@ export default async function MontagemDetalhePage({
         <p className="mb-3 text-sm font-medium text-slate-500">
           Comprovante de conclusão
         </p>
-        {montagem.fotoProdutoUrl ? (
+        {montagem.fotosProdutoUrls.length > 0 ? (
+          <div className="mb-4 grid gap-4 sm:grid-cols-2">
+            {montagem.fotosProdutoUrls.map((url, i) => (
+              <a key={url} href={url} target="_blank" rel="noreferrer">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={url}
+                  alt={`Foto do produto montado ${i + 1}`}
+                  className="max-h-96 w-full rounded-xl border border-slate-200 object-contain"
+                />
+              </a>
+            ))}
+          </div>
+        ) : montagem.fotoProdutoUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={montagem.fotoProdutoUrl}
@@ -375,6 +388,7 @@ export default async function MontagemDetalhePage({
             status: montagem.status,
             manualUrl: montagem.manualUrl ?? undefined,
             manualNomeArquivo: montagem.manualNomeArquivo ?? undefined,
+            notaUrl: montagem.notaUrl ?? undefined,
           }}
         />
       </Card>

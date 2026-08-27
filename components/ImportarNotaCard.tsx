@@ -6,6 +6,7 @@ import {
   importarNotaAction,
   importarNotaTextoAction,
   resolverOuCriarLojaAction,
+  enviarFotoNotaAction,
   type DadosImportados,
   type ResultadoResolucaoLoja,
 } from "@/lib/actions/importar";
@@ -112,7 +113,22 @@ export function ImportarNotaCard({
         setProgresso("Preparando leitura da imagem…");
         const texto = await reconhecerImagem(arquivo);
         setProgresso("Interpretando os dados da nota…");
-        await tratarResultado(await importarNotaTextoAction(texto));
+        
+        const formData = new FormData();
+        formData.set("arquivo", arquivo);
+
+        const [resultadoTexto, resultadoFoto] = await Promise.all([
+          importarNotaTextoAction(texto),
+          enviarFotoNotaAction(formData).catch(() => ({ ok: false, erro: "Falha ao enviar foto para armazenamento." } as const))
+        ]);
+
+        if (resultadoFoto.ok) {
+          resultadoTexto.notaUrl = resultadoFoto.url;
+        } else {
+          console.warn("Foto da nota não salva:", resultadoFoto.erro);
+        }
+
+        await tratarResultado(resultadoTexto);
         return;
       }
 

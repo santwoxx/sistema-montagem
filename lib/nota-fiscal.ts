@@ -22,6 +22,7 @@ export type DadosImportados = {
   lojaNomeSugerida?: string;
   lojaCnpjSugerido?: string;
   textoOriginal?: string;
+  notaUrl?: string;
   erro?: string;
 };
 

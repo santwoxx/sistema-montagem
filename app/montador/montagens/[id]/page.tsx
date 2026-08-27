@@ -286,7 +286,20 @@ export default async function MontagemDetalheMontadorPage({
             {montagem.fotoProdutoUrl || montagem.assinaturaMontador || montagem.assinaturaCliente ? (
               <Card>
                 <p className="mb-3 text-sm font-medium text-slate-500">Comprovante</p>
-                {montagem.fotoProdutoUrl ? (
+                {montagem.fotosProdutoUrls.length > 0 ? (
+                  <div className="mb-4 grid gap-2 sm:grid-cols-2">
+                    {montagem.fotosProdutoUrls.map((url, i) => (
+                      <a key={url} href={url} target="_blank" rel="noreferrer">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={url}
+                          alt={`Foto do produto montado ${i + 1}`}
+                          className="w-full rounded-xl border border-slate-200 object-cover"
+                        />
+                      </a>
+                    ))}
+                  </div>
+                ) : montagem.fotoProdutoUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={montagem.fotoProdutoUrl}

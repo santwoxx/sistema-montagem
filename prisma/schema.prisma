@@ -121,6 +121,7 @@ model Montagem {
 
   // Comprovante de conclusão: foto do produto montado e assinaturas
   fotoProdutoUrl      String?
+  fotosProdutoUrls    String[] @default([])
   assinaturaMontador  String? @db.Text
   assinaturaCliente   String? @db.Text
 
@@ -129,6 +130,9 @@ model Montagem {
   manualUrl         String?
   manualNomeArquivo String?
   manualTipo        String?
+  
+  // Foto original da nota fiscal (quando importada/lida).
+  notaUrl           String?
 
   // Se essa montagem veio do CentralSync (numeroPedido no formato "del-..."),
   // marca quando o admin confirmou o envio da conclusão de volta pra lá.
@@ -188,6 +192,9 @@ model NotaPendente {
   // Foto de referência do produto (não é o comprovante de conclusão) —
   // vira o "manual/instrução" da montagem quando a nota é usada.
   fotoReferenciaUrl String?
+  
+  // Foto da nota fiscal de onde estes dados foram lidos
+  notaUrl           String?
 
   montadorSugeridoId String?
   montadorSugerido   User? @relation("MontadorNotasPendentes", fields: [montadorSugeridoId], references: [id], onDelete: SetNull)
