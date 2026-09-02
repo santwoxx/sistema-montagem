@@ -56,6 +56,21 @@ export default async function LojasPage({
           >
             <Input type="number" name="percentualAssistencia" min={0} max={100} step="0.5" defaultValue={0} />
           </Field>
+          <label className="flex items-start gap-2 text-sm text-gray-700 sm:col-span-2">
+            <input
+              type="checkbox"
+              name="integraCentralSync"
+              className="mt-0.5 h-4 w-4 rounded border-gray-300"
+            />
+            <span>
+              Loja atendida pelo CentralSync
+              <span className="block text-xs text-gray-500">
+                Libera o botão de enviar o comprovante da montagem para ela também
+                nas notas lançadas aqui à mão. Os pedidos que chegam pela
+                integração já vão de qualquer jeito.
+              </span>
+            </span>
+          </label>
           <div className="sm:col-span-2">
             <SubmitButton pendingText="Cadastrando…">Cadastrar loja</SubmitButton>
           </div>
@@ -81,6 +96,7 @@ export default async function LojasPage({
                       {loja.endereco ? ` · ${loja.endereco}` : ""}
                       {loja.cnpj ? ` · CNPJ ${formatarCnpj(loja.cnpj)}` : ""}
                       {loja.percentualAssistencia ? ` · Assistência ${loja.percentualAssistencia}%` : ""}
+                      {loja.integraCentralSync ? " · CentralSync" : ""}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -145,6 +161,21 @@ export default async function LojasPage({
                       className="h-4 w-4 rounded border-gray-300"
                     />
                     Loja ativa (aparece para escolha ao criar montagens)
+                  </label>
+                  <label className="flex items-start gap-2 text-sm text-gray-700 sm:col-span-2">
+                    <input
+                      type="checkbox"
+                      name="integraCentralSync"
+                      defaultChecked={loja.integraCentralSync}
+                      className="mt-0.5 h-4 w-4 rounded border-gray-300"
+                    />
+                    <span>
+                      Loja atendida pelo CentralSync
+                      <span className="block text-xs text-gray-500">
+                        Libera o botão de enviar o comprovante da montagem para ela
+                        também nas notas lançadas aqui à mão.
+                      </span>
+                    </span>
                   </label>
                   <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
                     <SubmitButton pendingText="Salvando…">Salvar alterações</SubmitButton>

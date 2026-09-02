@@ -65,6 +65,12 @@ model Loja {
   // Usado pra pré-preencher "Assistência (%)" em Nova montagem assim que a
   // loja é selecionada/resolvida.
   percentualAssistencia Float @default(0)
+  // Marca a loja que o CentralSync atende (a Central Móveis). É o que libera
+  // o botão "Enviar para a Central Móveis" nas montagens lançadas à mão: as
+  // que chegam pela integração se identificam sozinhas pelo numeroPedido
+  // ("del-...", ver lib/centralsync.ts), mas uma nota digitada no painel não
+  // tem como -- e ficava sem nenhum jeito de voltar para a loja.
+  integraCentralSync Boolean @default(false)
 
   comissoes ComissaoLoja[]
   montagens Montagem[]

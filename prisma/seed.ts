@@ -44,7 +44,16 @@ async function main() {
   });
   if (!centralMoveis) {
     await prisma.loja.create({
-      data: { nome: CENTRAL_MOVEIS_NOME, telefone: "7399392585", ativo: true },
+      // integraCentralSync: é esta a loja que o CentralSync atende, e é o
+      // que libera o envio da conclusão nas montagens lançadas à mão (ver
+      // lib/centralsync.ts). Instalação já existente é marcada pela migração
+      // 20260902120000_loja_integra_centralsync, não por aqui.
+      data: {
+        nome: CENTRAL_MOVEIS_NOME,
+        telefone: "7399392585",
+        ativo: true,
+        integraCentralSync: true,
+      },
     });
     console.log(`Loja "${CENTRAL_MOVEIS_NOME}" cadastrada com o WhatsApp padrão.`);
   } else {

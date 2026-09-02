@@ -21,6 +21,9 @@ export async function criarLojaAction(formData: FormData) {
   const endereco = String(formData.get("endereco") || "").trim();
   const cnpj = normalizarCnpj(String(formData.get("cnpj") || ""));
   const percentualAssistencia = paraPercentual(formData.get("percentualAssistencia"));
+  // Libera o envio da conclusão para o CentralSync nas montagens lançadas à
+  // mão desta loja (ver lib/centralsync.ts).
+  const integraCentralSync = formData.get("integraCentralSync") === "on";
 
   if (!nome) {
     redirect(`/admin/lojas?erro=${encodeURIComponent("Informe o nome da loja.")}`);
@@ -28,7 +31,14 @@ export async function criarLojaAction(formData: FormData) {
 
   try {
     await prisma.loja.create({
-      data: { nome, telefone: telefone || null, endereco: endereco || null, cnpj, percentualAssistencia },
+      data: {
+        nome,
+        telefone: telefone || null,
+        endereco: endereco || null,
+        cnpj,
+        percentualAssistencia,
+        integraCentralSync,
+      },
     });
   } catch (error) {
     if (ehErroCnpjDuplicado(error)) {
@@ -54,6 +64,7 @@ export async function atualizarLojaAction(id: string, formData: FormData) {
   const cnpj = normalizarCnpj(String(formData.get("cnpj") || ""));
   const ativo = formData.get("ativo") === "on";
   const percentualAssistencia = paraPercentual(formData.get("percentualAssistencia"));
+  const integraCentralSync = formData.get("integraCentralSync") === "on";
 
   if (!nome) {
     redirect(
@@ -64,7 +75,15 @@ export async function atualizarLojaAction(id: string, formData: FormData) {
   try {
     await prisma.loja.update({
       where: { id },
-      data: { nome, telefone: telefone || null, endereco: endereco || null, cnpj, ativo, percentualAssistencia },
+      data: {
+        nome,
+        telefone: telefone || null,
+        endereco: endereco || null,
+        cnpj,
+        ativo,
+        percentualAssistencia,
+        integraCentralSync,
+      },
     });
   } catch (error) {
     if (ehErroCnpjDuplicado(error)) {

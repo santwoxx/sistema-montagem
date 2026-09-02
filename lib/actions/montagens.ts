@@ -13,7 +13,12 @@ import {
   TAMANHO_MAXIMO_UPLOAD_TEXTO,
 } from "@/lib/upload";
 import { linkWhatsapp, OCORRENCIA_LABEL, paraNumeroBr } from "@/lib/format";
-import { pareceIdDoCentralSync } from "@/lib/centralsync";
+import {
+  ehDesmontagemOuAssistencia,
+  idDaEntregaNoCentralSync,
+  nomeParaCentralSync,
+  podeEnviarAoCentralSync,
+} from "@/lib/centralsync";
 import { instanteLocal } from "@/lib/datas";
 import {
   OrigemEnvioSchema,
@@ -477,13 +482,17 @@ async function tentarAvisarCentralSync(
 // confirmação entra na caixa "Montagens Feitas" da aba Entregas e um admin
 // do CentralSync marca a entrega como montada depois de conferir foto e
 // assinaturas.
+type DadosEnvioCentralSync = {
+  deliveryId: string;
+  montadorNome: string | null;
+  assemblerSignature: string;
+  customerSignature: string;
+  photo: string;
+  reason?: string;
+};
+
 async function avisarCentralSync(
-  deliveryId: string,
-  montadorNome: string | null,
-  assemblerSignature: string,
-  customerSignature: string,
-  photo: string,
-  reason?: string
+  dados: DadosEnvioCentralSync
 ): Promise<ResultadoEnvioCentralSync> {
   if (!CENTRALSYNC_SHARED_KEY) {
     console.warn("MONTAFACIL_TO_CENTRALSYNC_KEY não configurada -- não é possível avisar o CentralSync.");
@@ -494,14 +503,14 @@ async function avisarCentralSync(
     };
   }
 
-  const corpo = JSON.stringify({
-    deliveryId,
-    montadorNome,
-    assemblerSignature,
-    customerSignature,
-    photo,
-    ...(reason ? { reason } : {}),
-  });
+  // Campos vazios/indefinidos ficam de fora: o corpo carrega imagens em
+  // base64 e não vale a pena engordá-lo com nulos que o outro lado
+  // descartaria de qualquer jeito.
+  const corpo = JSON.stringify(
+    Object.fromEntries(
+      Object.entries(dados).filter(([, valor]) => valor !== undefined && valor !== "")
+    )
+  );
 
   // Reenviar é seguro: do outro lado o aviso é gravado pelo id da entrega,
   // então a segunda tentativa sobrescreve a primeira em vez de duplicar
@@ -660,7 +669,12 @@ export async function confirmarEnvioCentralSyncAction(
 
   const montagem = await prisma.montagem.findUnique({
     where: { id },
-    include: { montador: { select: { nome: true } } },
+    include: {
+      montador: { select: { nome: true } },
+      // integraCentralSync é o que libera o envio das montagens lançadas à
+      // mão (ver podeEnviarAoCentralSync em lib/centralsync.ts).
+      loja: { select: { integraCentralSync: true } },
+    },
   });
   if (!montagem) redirect("/admin/montagens");
 
@@ -668,8 +682,12 @@ export async function confirmarEnvioCentralSyncAction(
   const comErro = (mensagem: string) =>
     redirect(`${voltarPara}?erro=${encodeURIComponent(mensagem)}`);
 
-  if (!pareceIdDoCentralSync(montagem.numeroPedido)) {
-    comErro("Esta montagem não veio do CentralSync, então não há o que enviar para lá.");
+  if (!podeEnviarAoCentralSync(montagem)) {
+    comErro(
+      ehDesmontagemOuAssistencia(montagem.numeroPedido)
+        ? "Desmontagem e assistência não viram confirmação de montagem no CentralSync — lá isso marcaria a entrega original como montada de novo. Acerte esse serviço direto com a loja."
+        : "Esta montagem não é de uma loja ligada ao CentralSync, então não há o que enviar para lá. Se for, marque \"Loja atendida pelo CentralSync\" no cadastro dela em Lojas."
+    );
     return;
   }
   if (montagem.status !== "CONCLUIDO") {
@@ -695,14 +713,14 @@ export async function confirmarEnvioCentralSyncAction(
     return;
   }
 
-  const envio = await avisarCentralSync(
-    montagem.numeroPedido,
-    montagem.montador?.nome ?? null,
-    montagem.assinaturaMontador || "",
-    montagem.assinaturaCliente || "",
-    montagem.fotoProdutoUrl || "",
-    motivo || undefined
-  );
+  const envio = await avisarCentralSync({
+    deliveryId: idDaEntregaNoCentralSync(montagem),
+    montadorNome: nomeParaCentralSync(montagem),
+    assemblerSignature: montagem.assinaturaMontador || "",
+    customerSignature: montagem.assinaturaCliente || "",
+    photo: montagem.fotoProdutoUrl || "",
+    reason: motivo || undefined,
+  });
 
   // A mensagem que sobe para a tela diz o que aconteceu de verdade (chave,
   // tempo esgotado, recusa do outro lado). A montagem continua na fila do

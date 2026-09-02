@@ -9,7 +9,7 @@ import {
   confirmarEnvioCentralSyncAction,
   concluirComProvaAction,
 } from "@/lib/actions/montagens";
-import { pareceIdDoCentralSync } from "@/lib/centralsync";
+import { pareceIdDoCentralSync, podeEnviarAoCentralSync } from "@/lib/centralsync";
 import { linkMapa, linkWaze } from "@/lib/mapas";
 import { CopiarTexto } from "@/components/CopiarTexto";
 import { Alerta, Badge, Button, Card, PageHeader } from "@/components/ui";
@@ -52,7 +52,14 @@ export default async function MontagemDetalhePage({
   const [montagem, lojas, montadores, comissoes] = await Promise.all([
     prisma.montagem.findUnique({
       where: { id },
-      include: { avaliacao: true, ocorrencias: { orderBy: { criadoEm: "desc" } }, montador: true },
+      include: {
+        avaliacao: true,
+        ocorrencias: { orderBy: { criadoEm: "desc" } },
+        montador: true,
+        // integraCentralSync decide se o cartão de envio à Central Móveis
+        // aparece nas montagens lançadas à mão (ver lib/centralsync.ts).
+        loja: { select: { nome: true, integraCentralSync: true } },
+      },
     }),
     prisma.loja.findMany({ orderBy: { nome: "asc" } }),
     prisma.user.findMany({ where: { role: "MONTADOR" }, orderBy: { nome: "asc" } }),
@@ -60,6 +67,13 @@ export default async function MontagemDetalhePage({
   ]);
 
   if (!montagem) notFound();
+
+  // Envio da conclusão para a Central Móveis. Dois casos, e o segundo é o que
+  // faltava: o pedido que chegou pela integração ("del-...") e a montagem
+  // lançada à mão numa loja marcada como atendida pelo CentralSync -- essa
+  // não tem entrega do outro lado, então vai como montagem avulsa.
+  const veioDaIntegracao = pareceIdDoCentralSync(montagem.numeroPedido);
+  const vaiParaCentralSync = podeEnviarAoCentralSync(montagem);
 
   return (
     <div>
@@ -247,9 +261,13 @@ export default async function MontagemDetalhePage({
         />
       </Card>
 
-      {pareceIdDoCentralSync(montagem.numeroPedido) ? (
+      {vaiParaCentralSync ? (
         <Card className="mb-6 border-blue-100">
-          <p className="text-sm font-medium text-slate-500">Integração CentralSync</p>
+          <p className="text-sm font-medium text-slate-500">
+            {veioDaIntegracao
+              ? "Integração CentralSync"
+              : `Enviar para a ${montagem.loja.nome}`}
+          </p>
           {montagem.notificadoCentralSyncEm ? (
             <>
               <p className="mt-2 text-sm text-emerald-700">
@@ -261,7 +279,11 @@ export default async function MontagemDetalhePage({
                 (caixa &ldquo;Montagens Feitas&rdquo;). Se lá não aparecer, reenvie.
               </p>
               <form action={confirmarEnvioCentralSyncAction.bind(null, montagem.id, "montagem")}>
-                <SubmitButton pendingText="Reenviando…">Reenviar ao CentralSync</SubmitButton>
+                <SubmitButton pendingText="Reenviando…">
+                  {veioDaIntegracao
+                    ? "Reenviar ao CentralSync"
+                    : `Reenviar para a ${montagem.loja.nome}`}
+                </SubmitButton>
               </form>
             </>
           ) : montagem.status === "CONCLUIDO" ? (
@@ -276,6 +298,22 @@ export default async function MontagemDetalhePage({
                 . Confira a foto e as assinaturas acima — o CentralSync só recebe
                 a conclusão quando você enviar daqui.
               </p>
+              {/* Lançada à mão: não existe entrega correspondente do outro
+                  lado, e a caixa "Montagens Feitas" de lá só consegue mostrar
+                  o que vier no aviso. Por isso a tela avisa o que a loja vai
+                  ver -- e o que ela NÃO vai conseguir fazer por lá. */}
+              {veioDaIntegracao ? null : (
+                <p className="mb-3 rounded-lg bg-blue-50 p-3 text-sm text-blue-900">
+                  Lançada à mão: este serviço não existe como entrega no
+                  CentralSync. A foto e as assinaturas chegam na caixa
+                  &ldquo;Montagens Feitas&rdquo; (aba Entregas &amp; Assinaturas)
+                  identificadas por
+                  {montagem.numeroPedido ? ` pedido ${montagem.numeroPedido} e` : ""}{" "}
+                  {montagem.clienteNome}, para a loja conferir. Como não há
+                  entrega correspondente lá, a baixa do pedido é feita por eles
+                  no sistema deles.
+                </p>
+              )}
               <form action={confirmarEnvioCentralSyncAction.bind(null, montagem.id, "montagem")} className="space-y-3">
                 {(!montagem.fotoProdutoUrl || !montagem.assinaturaMontador || !montagem.assinaturaCliente) && (
                   <div>
@@ -290,14 +328,18 @@ export default async function MontagemDetalhePage({
                     />
                   </div>
                 )}
-                <SubmitButton pendingText="Enviando…">Enviar ao CentralSync</SubmitButton>
+                <SubmitButton pendingText="Enviando…">
+                  {veioDaIntegracao
+                    ? "Enviar ao CentralSync"
+                    : `Enviar para a ${montagem.loja.nome}`}
+                </SubmitButton>
               </form>
             </>
           ) : (
             <p className="mt-1 text-sm text-slate-500">
-              Esse pedido veio do CentralSync. Quando quem for montar concluir
-              (foto + assinaturas), a montagem aparece aqui e no painel geral com
-              o botão para você conferir e enviar a conclusão para a loja.
+              {veioDaIntegracao
+                ? "Esse pedido veio do CentralSync. Quando quem for montar concluir (foto + assinaturas), a montagem aparece aqui e no painel geral com o botão para você conferir e enviar a conclusão para a loja."
+                : `Assim que esta montagem for concluída (foto + assinaturas), o botão para enviar o comprovante para a ${montagem.loja.nome} aparece aqui.`}
             </p>
           )}
         </Card>

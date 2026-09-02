@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { confirmarEnvioCentralSyncAction } from "@/lib/actions/montagens";
-import { PREFIXO_PEDIDO_CENTRALSYNC } from "@/lib/centralsync";
+import { PREFIXO_PEDIDO_CENTRALSYNC, PREFIXOS_FORA_DA_CONFIRMACAO } from "@/lib/centralsync";
 import { valorDevidoPelaLoja } from "@/lib/financeiro";
 import { formatarData, formatarDataHora, formatarMoeda, STATUS_COLOR, STATUS_LABEL } from "@/lib/format";
 import { inicioDoMesLocal } from "@/lib/datas";
@@ -88,12 +88,31 @@ export default async function AdminDashboardPage({
     prisma.montagem.findMany({
       where: {
         status: "CONCLUIDO",
-        // "insensitive" para casar com pareceIdDoCentralSync
+        notificadoCentralSyncEm: null,
+        // Precisa dizer o mesmo que podeEnviarAoCentralSync
         // (lib/centralsync.ts). Se a fila daqui e a checagem de lá
         // discordarem, a montagem some do painel mesmo com o botão da tela
         // dela funcionando -- ou aparece aqui e o clique volta com erro.
-        numeroPedido: { startsWith: PREFIXO_PEDIDO_CENTRALSYNC, mode: "insensitive" },
-        notificadoCentralSyncEm: null,
+        OR: [
+          // Pedido vindo da integração. "insensitive" porque o número fica
+          // num campo que o admin pode reescrever.
+          { numeroPedido: { startsWith: PREFIXO_PEDIDO_CENTRALSYNC, mode: "insensitive" } },
+          // Montagem lançada à mão numa loja atendida pelo CentralSync.
+          // Desmontagem e assistência ficam de fora; o OR com `null` existe
+          // porque em SQL `NOT (coluna LIKE ...)` com coluna nula não é
+          // verdadeiro -- sem ele, montagem sem número sumia da fila.
+          {
+            loja: { integraCentralSync: true },
+            OR: [
+              { numeroPedido: null },
+              {
+                AND: PREFIXOS_FORA_DA_CONFIRMACAO.map((prefixo) => ({
+                  NOT: { numeroPedido: { startsWith: prefixo, mode: "insensitive" as const } },
+                })),
+              },
+            ],
+          },
+        ],
       },
       orderBy: { concluidoEm: "asc" },
       // 11 para saber que passou de 10 sem gastar um count() a mais.
@@ -106,6 +125,7 @@ export default async function AdminDashboardPage({
         fotoProdutoUrl: true,
         feitoPorAdm: true,
         montador: { select: { nome: true } },
+        loja: { select: { nome: true } },
       },
     }),
   ]);
@@ -217,7 +237,9 @@ export default async function AdminDashboardPage({
                       {m.concluidoEm ? ` · ${formatarDataHora(m.concluidoEm)}` : ""}
                     </p>
                     <p className="truncate text-xs text-slate-400">
-                      Entrega {m.numeroPedido}
+                      {m.numeroPedido
+                        ? `Entrega ${m.numeroPedido}`
+                        : `Lançada à mão · ${m.loja.nome}`}
                     </p>
                     {m.fotoProdutoUrl && temAssinaturas.has(m.id) ? null : (
                       <p className="text-xs font-medium text-amber-700">
