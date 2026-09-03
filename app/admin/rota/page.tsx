@@ -2,19 +2,16 @@ import Form from "next/form";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { Badge, Button, Card, Field, Input, PageHeader, Select, Vazio } from "@/components/ui";
-import { CopiarTexto } from "@/components/CopiarTexto";
+import { AcoesCliente } from "@/components/AcoesCliente";
 import {
   dividirEmTrechos,
   linkEmbedRota,
-  linkMapa,
   linkRotaGoogleMaps,
-  linkWaze,
   MAX_PARADAS_POR_TRECHO,
 } from "@/lib/mapas";
 import {
   formatarData,
   formatarMoeda,
-  linkTelefone,
   linkWhatsapp,
   paraInputDate,
   STATUS_COLOR,
@@ -286,43 +283,11 @@ export default async function RotaPage({
                       {m.dataAgendada ? "" : " · sem data agendada"}
                     </p>
 
-                    <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-                      <a
-                        href={linkMapa(m.clienteEndereco)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline"
-                      >
-                        📍 Google Maps
-                      </a>
-                      <a
-                        href={linkWaze(m.clienteEndereco)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-sm font-medium text-sky-600 hover:underline"
-                      >
-                        🚗 Waze
-                      </a>
-                      {m.clienteTelefone ? (
-                        <>
-                          <a
-                            href={linkTelefone(m.clienteTelefone)}
-                            className="inline-flex items-center gap-1 text-sm font-medium text-slate-600 hover:underline"
-                          >
-                            📞 Ligar
-                          </a>
-                          <a
-                            href={linkWhatsapp(m.clienteTelefone)}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1 text-sm font-medium text-emerald-600 hover:underline"
-                          >
-                            💬 WhatsApp
-                          </a>
-                        </>
-                      ) : null}
-                      <CopiarTexto texto={m.clienteEndereco} rotulo="Copiar endereço" />
-                    </div>
+                    <AcoesCliente
+                      endereco={m.clienteEndereco}
+                      telefone={m.clienteTelefone}
+                      className="mt-3"
+                    />
                   </div>
                 </div>
               </Card>

@@ -85,6 +85,32 @@ export function linkTelefone(telefone: string) {
   return `tel:${apenasDigitos(telefone)}`;
 }
 
+// Telefone no formato que se lê num cartão: (73) 98803-6706. O número é
+// gravado do jeito que a loja mandou (às vezes só dígitos, às vezes com
+// código do país), e é ele que aparece na tela ao lado do botão de ligar.
+// Fora dos tamanhos conhecidos, devolve o texto original -- melhor mostrar
+// esquisito do que esconder o contato do cliente.
+export function formatarTelefone(telefone: string | null | undefined) {
+  const original = String(telefone ?? "").trim();
+  // Anotação junto do número ("73 99991-2345 recado", "casa") é comum, e
+  // formatar jogaria fora justamente o aviso de quem atende. Nesses casos
+  // o texto vai inteiro para a tela -- o link de ligar usa só os dígitos
+  // de qualquer jeito (linkTelefone).
+  if (/\p{L}/u.test(original)) return original;
+
+  let digitos = apenasDigitos(original);
+  // "+55 73 98803-6706" e "5573988036706" chegam com o código do país.
+  if (digitos.length > 11 && digitos.startsWith("55")) digitos = digitos.slice(2);
+
+  if (digitos.length === 11) {
+    return `(${digitos.slice(0, 2)}) ${digitos.slice(2, 7)}-${digitos.slice(7)}`;
+  }
+  if (digitos.length === 10) {
+    return `(${digitos.slice(0, 2)}) ${digitos.slice(2, 6)}-${digitos.slice(6)}`;
+  }
+  return original;
+}
+
 export const STATUS_LABEL: Record<string, string> = {
   PENDENTE: "Pendente",
   EM_ANDAMENTO: "Em andamento",

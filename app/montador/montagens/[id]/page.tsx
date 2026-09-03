@@ -10,14 +10,13 @@ import {
 } from "@/lib/actions/montagens";
 import { gerarLinkAvaliacaoAction } from "@/lib/actions/avaliacoes";
 import { Alerta, Badge, Card, PageHeader } from "@/components/ui";
+import { AcoesCliente } from "@/components/AcoesCliente";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ConcluirMontagemForm } from "@/components/ConcluirMontagemForm";
 import { RegistrarOcorrenciaForm } from "@/components/RegistrarOcorrenciaForm";
 import { EditarEnderecoCliente } from "@/components/EditarEnderecoCliente";
 import { EnviarAvaliacaoButton } from "@/components/EnviarAvaliacaoButton";
 import { Estrelas } from "@/components/Estrelas";
-import { CopiarTexto } from "@/components/CopiarTexto";
-import { linkMapa, linkWaze } from "@/lib/mapas";
 import {
   formatarData,
   formatarDataHora,
@@ -81,25 +80,9 @@ export default async function MontagemDetalheMontadorPage({
         <Card>
           <p className="text-sm font-medium text-gray-500">Endereço</p>
           <p className="mt-1 text-gray-900">{montagem.clienteEndereco}</p>
-          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-            <a
-              href={linkMapa(montagem.clienteEndereco)}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline"
-            >
-              📍 Google Maps
-            </a>
-            <a
-              href={linkWaze(montagem.clienteEndereco)}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 text-sm font-medium text-sky-600 hover:underline"
-            >
-              🚗 Waze
-            </a>
-            <CopiarTexto texto={montagem.clienteEndereco} rotulo="Copiar endereço" />
-          </div>
+          {/* Telefone não vai aqui: nesta tela ele tem cartão próprio
+              logo abaixo, com o botão de ligar e o de WhatsApp. */}
+          <AcoesCliente endereco={montagem.clienteEndereco} className="mt-3" />
           {montagem.status !== "CONCLUIDO" ? (
             <EditarEnderecoCliente
               action={atualizarClienteMontadorAction.bind(null, montagem.id)}

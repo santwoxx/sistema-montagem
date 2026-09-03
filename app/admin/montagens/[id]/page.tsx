@@ -8,10 +8,10 @@ import {
   excluirMontagemAction,
   confirmarEnvioCentralSyncAction,
   concluirComProvaAction,
+  reporNaFilaCentralSyncAction,
 } from "@/lib/actions/montagens";
 import { pareceIdDoCentralSync, podeEnviarAoCentralSync } from "@/lib/centralsync";
-import { linkMapa, linkWaze } from "@/lib/mapas";
-import { CopiarTexto } from "@/components/CopiarTexto";
+import { AcoesCliente } from "@/components/AcoesCliente";
 import { Alerta, Badge, Button, Card, PageHeader } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
 import { NovaMontagemForm } from "@/components/NovaMontagemForm";
@@ -22,8 +22,6 @@ import {
   formatarData,
   formatarDataHora,
   formatarMoeda,
-  linkTelefone,
-  linkWhatsapp,
   OCORRENCIA_COLOR,
   OCORRENCIA_LABEL,
   paraInputDate,
@@ -98,49 +96,18 @@ export default async function MontagemDetalhePage({
       <Card className="mb-6">
         <p className="text-sm font-medium text-gray-500">Endereço do cliente</p>
         <p className="mt-1 text-gray-900">{montagem.clienteEndereco}</p>
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-          <a
-            href={linkMapa(montagem.clienteEndereco)}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline"
-          >
-            📍 Google Maps
-          </a>
-          <a
-            href={linkWaze(montagem.clienteEndereco)}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 text-sm font-medium text-sky-600 hover:underline"
-          >
-            🚗 Waze
-          </a>
-          <CopiarTexto texto={montagem.clienteEndereco} rotulo="Copiar endereço" />
-          {montagem.clienteTelefone ? (
-            <>
-              <a
-                href={linkTelefone(montagem.clienteTelefone)}
-                className="inline-flex items-center gap-1 text-sm font-medium text-slate-600 hover:underline"
-              >
-                📞 {montagem.clienteTelefone}
-              </a>
-              <a
-                href={linkWhatsapp(montagem.clienteTelefone)}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 text-sm font-medium text-emerald-600 hover:underline"
-              >
-                💬 WhatsApp
-              </a>
-            </>
-          ) : null}
+        <AcoesCliente
+          endereco={montagem.clienteEndereco}
+          telefone={montagem.clienteTelefone}
+          className="mt-3"
+        >
           <Link
             href={`/admin/rota?data=${paraInputDate(montagem.dataAgendada)}`}
             className="inline-flex items-center gap-1 text-sm font-medium text-navy hover:underline"
           >
             🗺️ Ver na rota do dia
           </Link>
-        </div>
+        </AcoesCliente>
       </Card>
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2">
@@ -334,6 +301,33 @@ export default async function MontagemDetalhePage({
                     : `Enviar para a ${montagem.loja.nome}`}
                 </SubmitButton>
               </form>
+              {/* Removida da fila do painel (botão "Remover da fila" de lá).
+                  A montagem não perde nada com isso -- o botão de envio
+                  acima continua valendo --, mas ela deixa de aparecer na
+                  caixa do painel geral, e esta é a única tela que conta
+                  isso e desfaz. Ver dispensarEnvioCentralSyncAction. */}
+              {montagem.dispensadoCentralSyncEm ? (
+                <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-sm text-slate-600">
+                    Esta montagem foi removida da fila &ldquo;Prontas para enviar ao
+                    CentralSync&rdquo; do painel geral em{" "}
+                    {formatarDataHora(montagem.dispensadoCentralSyncEm)}. Ela não
+                    aparece mais lá — só aqui.
+                  </p>
+                  <form
+                    action={reporNaFilaCentralSyncAction.bind(null, montagem.id, "montagem")}
+                    className="mt-3"
+                  >
+                    <SubmitButton
+                      variante="secundario"
+                      className="px-3 py-2 text-sm"
+                      pendingText="Devolvendo…"
+                    >
+                      Devolver à fila do painel
+                    </SubmitButton>
+                  </form>
+                </div>
+              ) : null}
             </>
           ) : (
             <p className="mt-1 text-sm text-slate-500">

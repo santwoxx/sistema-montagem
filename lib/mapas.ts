@@ -12,8 +12,53 @@ export function linkMapa(endereco: string) {
   )}`;
 }
 
+/**
+ * Limpa o endereço antes de mandá-lo para a busca do Waze.
+ *
+ * O endereço chega como uma linha só, do jeito que a loja digitou ou que o
+ * CentralSync mandou -- e vem com coisas que o Google entende e o Waze não:
+ *
+ *   Rua José Bonifácio, 364 - Santo Antônio, Itabuna - BA (CEP: 45602-132)
+ *
+ * O buscador do Waze é bem menos tolerante que o do Google: o trecho entre
+ * parênteses (CEP, ponto de referência, "casa amarela") derruba a busca, e
+ * o app abre sem achar nada -- que é o "clica no Waze e não vai" relatado
+ * por quem usa. O hífen separando bairro e cidade também atrapalha; vírgula
+ * é o separador que ele espera.
+ *
+ * Google Maps continua recebendo o endereço inteiro (linkMapa), porque lá o
+ * texto extra ajuda em vez de atrapalhar.
+ */
+export function enderecoParaNavegacao(endereco: string) {
+  const limpo = endereco
+    // Fora tudo entre parênteses: é sempre complemento ou referência.
+    .replace(/\([^)]*\)?/g, " ")
+    // CEP solto (com ou sem o rótulo), que sobra quando não vem entre
+    // parênteses. O Waze até busca por CEP sozinho, mas junto com o
+    // endereço ele vira mais um termo para não casar.
+    .replace(/cep[:\s]*\d{2}\.?\d{3}-?\d{3}/gi, " ")
+    .replace(/(?<!\d)\d{5}-\d{3}(?!\d)/g, " ")
+    // Hífen usado como separador ("bairro - cidade", "Itabuna - BA") vira
+    // vírgula. O hífen dentro de palavra (Cidade-Nova) fica quieto.
+    .replace(/\s+-\s+/g, ", ")
+    .replace(/\s+/g, " ")
+    // Sobras de pontuação: vírgulas seguidas e pontuação nas pontas.
+    .replace(/\s*,\s*(?=,)/g, "")
+    .replace(/^[\s,.-]+|[\s,.-]+$/g, "")
+    .trim();
+
+  // Endereço que era só um complemento entre parênteses ficaria vazio aqui
+  // -- melhor mandar o original e deixar o Waze tentar do que abrir vazio.
+  return limpo || endereco.trim();
+}
+
 export function linkWaze(endereco: string) {
-  return `https://waze.com/ul?q=${encodeURIComponent(endereco)}&navigate=yes`;
+  // "www" e "navigate=yes" são o formato documentado do link universal do
+  // Waze: no celular abre o aplicativo já traçando a rota, e no computador
+  // cai no site.
+  return `https://www.waze.com/ul?q=${encodeURIComponent(
+    enderecoParaNavegacao(endereco)
+  )}&navigate=yes`;
 }
 
 // A URL de direções do Google Maps aceita no máximo 9 pontos intermediários

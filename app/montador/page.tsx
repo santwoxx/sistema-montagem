@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireMontador } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Badge, Card, PageHeader, StatCard, Vazio } from "@/components/ui";
+import { AcoesCliente } from "@/components/AcoesCliente";
 import { Estrelas } from "@/components/Estrelas";
 import { formatarData, formatarMoeda, STATUS_COLOR, STATUS_LABEL } from "@/lib/format";
 import { inicioDoMesLocal } from "@/lib/datas";
@@ -26,6 +27,11 @@ export default async function PainelMontadorPage() {
       select: {
         id: true,
         clienteNome: true,
+        // Endereço e telefone na própria lista: é esta a tela que o
+        // montador abre na rua, e sair daqui só para ver para onde ir era
+        // um toque a mais em cada montagem do dia.
+        clienteEndereco: true,
+        clienteTelefone: true,
         dataAgendada: true,
         valorServico: true,
         valorMontador: true,
@@ -147,27 +153,48 @@ export default async function PainelMontadorPage() {
         <Vazio>Nenhuma montagem pendente no momento. 🎉</Vazio>
       ) : (
         <div className="space-y-3">
+          {/* Cartão sem link em volta: agora ele tem links próprios (Waze,
+              ligar, WhatsApp), e âncora dentro de âncora não é HTML válido
+              -- o toque acabava abrindo a montagem em vez de navegar. */}
           {ativas.map((m) => (
-            <Link key={m.id} href={`/montador/montagens/${m.id}`}>
-              <Card className="transition-shadow hover:shadow-md">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <p className="font-semibold text-gray-900">{m.clienteNome}</p>
-                    <p className="text-sm text-gray-500">{m.loja.nome}</p>
-                    <p className="mt-1 text-xs text-gray-400">
-                      {m.dataAgendada ? formatarData(m.dataAgendada) : "Sem data definida"}
-                    </p>
-                    <p className="mt-1 text-xs text-gray-500">
-                      Nota: {formatarMoeda(m.valorServico)} · Você recebe:{" "}
-                      <span className="font-medium text-emerald-600">
-                        {formatarMoeda(m.valorMontador)}
-                      </span>
-                    </p>
-                  </div>
-                  <Badge className={STATUS_COLOR[m.status]}>{STATUS_LABEL[m.status]}</Badge>
+            <Card key={m.id} className="transition-shadow hover:shadow-md">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <Link
+                    href={`/montador/montagens/${m.id}`}
+                    className="font-semibold text-gray-900 hover:underline"
+                  >
+                    {m.clienteNome}
+                  </Link>
+                  <p className="text-sm text-gray-500">{m.loja.nome}</p>
+                  <p className="mt-1 text-xs text-gray-400">
+                    {m.dataAgendada ? formatarData(m.dataAgendada) : "Sem data definida"}
+                  </p>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Nota: {formatarMoeda(m.valorServico)} · Você recebe:{" "}
+                    <span className="font-medium text-emerald-600">
+                      {formatarMoeda(m.valorMontador)}
+                    </span>
+                  </p>
                 </div>
-              </Card>
-            </Link>
+                <Badge className={STATUS_COLOR[m.status]}>{STATUS_LABEL[m.status]}</Badge>
+              </div>
+
+              <p className="mt-2 text-sm text-slate-900">{m.clienteEndereco}</p>
+
+              <AcoesCliente
+                endereco={m.clienteEndereco}
+                telefone={m.clienteTelefone}
+                className="mt-3"
+              >
+                <Link
+                  href={`/montador/montagens/${m.id}`}
+                  className="inline-flex items-center gap-1 text-sm font-medium text-navy hover:underline"
+                >
+                  🔧 Abrir montagem
+                </Link>
+              </AcoesCliente>
+            </Card>
           ))}
         </div>
       )}

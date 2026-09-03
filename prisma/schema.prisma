@@ -147,6 +147,15 @@ model Montagem {
   // da equipe, não o dono da conta.
   notificadoCentralSyncEm DateTime?
 
+  // Quando o admin tirou esta montagem da fila "Prontas para enviar ao
+  // CentralSync" do painel sem enviá-la (montagem antiga, teste, serviço
+  // acertado direto com a loja). Não apaga nada e não fecha o assunto: a
+  // montagem continua na lista de montagens, o botão de envio continua na
+  // tela dela, e de lá dá para devolvê-la à fila. Existe porque a única
+  // saída da fila era o envio -- o que deixava a caixa do painel entupida
+  // de montagem que ninguém ia mandar, escondendo as que importam.
+  dispensadoCentralSyncEm DateTime?
+
   // Avaliação do cliente sobre o montador, pedida por WhatsApp após a conclusão
   avaliacaoSolicitadaEm DateTime?
 

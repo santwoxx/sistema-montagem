@@ -4,6 +4,7 @@ import {
   formatarCnpj,
   formatarData,
   formatarDataHora,
+  formatarTelefone,
   linkTelefone,
   linkWhatsapp,
   paraInputDate,
@@ -70,6 +71,23 @@ describe("links de contato", () => {
   it("monta o link de ligação só com dígitos", () => {
     expect(linkTelefone("(73) 3333-4444")).toBe("tel:7333334444");
     expect(apenasDigitos("00.011.122/0001-99")).toBe("00011122000199");
+  });
+
+  // O número aparece escrito nos cartões do painel e da rota (ver
+  // components/AcoesCliente.tsx), do jeito que a loja mandou -- que vai de
+  // "73988036706" a "+55 73 98803-6706".
+  it("escreve o telefone como se lê num cartão", () => {
+    expect(formatarTelefone("73988036706")).toBe("(73) 98803-6706");
+    expect(formatarTelefone("7333334444")).toBe("(73) 3333-4444");
+    expect(formatarTelefone("+55 73 98803-6706")).toBe("(73) 98803-6706");
+  });
+
+  it("não esconde o número quando ele não tem o tamanho esperado", () => {
+    // Ramal, número incompleto, anotação: melhor mostrar como veio do que
+    // sumir com o contato do cliente.
+    expect(formatarTelefone("3999")).toBe("3999");
+    expect(formatarTelefone("73 99991-2345 (recado)")).toBe("73 99991-2345 (recado)");
+    expect(formatarTelefone(null)).toBe("");
   });
 });
 

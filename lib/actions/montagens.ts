@@ -732,13 +732,115 @@ export async function confirmarEnvioCentralSyncAction(
 
   await prisma.montagem.update({
     where: { id },
-    data: { notificadoCentralSyncEm: new Date() },
+    // dispensadoCentralSyncEm volta a zero junto: a montagem pode ter sido
+    // tirada da fila do painel antes (ver dispensarEnvioCentralSyncAction) e
+    // enviada depois, pela tela dela. Deixar a marca velha faria a tela
+    // dizer que ela está fora da fila logo abaixo do "enviado com sucesso".
+    data: { notificadoCentralSyncEm: new Date(), dispensadoCentralSyncEm: null },
   });
 
   revalidatePath(`/admin/montagens/${id}`);
   revalidatePath("/admin");
   redirect(
     `${voltarPara}?sucesso=${encodeURIComponent("CentralSync avisado da conclusão.")}`
+  );
+}
+
+// Tira a montagem da fila "Prontas para enviar ao CentralSync" do painel sem
+// mandar nada para a loja, e devolve à fila o que foi tirado por engano.
+//
+// Antes a fila só esvaziava pelo envio. Montagem antiga, teste da época da
+// implantação e serviço acertado direto com a loja ficavam lá para sempre --
+// e como o painel mostra 10 por vez, era isso que o admin via em vez das
+// conclusões novas esperando por ele.
+//
+// O que "remover" faz aqui é só marcar uma data: nada é apagado, a montagem
+// continua na lista, no financeiro e com o botão de envio na tela dela. Por
+// isso a operação é segura de desfazer -- é a mesma ação com `dispensada`
+// invertido.
+//
+// `origem` diz só para onde devolver o admin depois do clique, e vale o que
+// vale em confirmarEnvioCentralSyncAction: os argumentos são fixados com
+// .bind no formulário, então quem clica não escolhe destino nenhum.
+async function marcarDispensaCentralSync(
+  id: string,
+  origemBruta: string,
+  dispensada: boolean
+) {
+  await requireAdmin();
+
+  const origem = OrigemEnvioSchema.safeParse(origemBruta).data ?? "montagem";
+  const voltarPara = origem === "painel" ? "/admin" : `/admin/montagens/${id}`;
+
+  // updateMany, não update: id que não existe mais (montagem excluída em
+  // outra aba, botão clicado numa página velha) devolve count 0 em vez de
+  // estourar uma exceção na cara do admin. O filtro por
+  // notificadoCentralSyncEm segura o caso raro de a montagem ter sido
+  // enviada entre a página carregar e o clique chegar -- tirar da fila algo
+  // que já foi para a loja só faria a tela dela mentir.
+  const { count } = await prisma.montagem.updateMany({
+    where: { id, notificadoCentralSyncEm: null },
+    data: { dispensadoCentralSyncEm: dispensada ? new Date() : null },
+  });
+
+  revalidatePath(`/admin/montagens/${id}`);
+  revalidatePath("/admin");
+
+  if (count === 0) {
+    redirect(
+      `${voltarPara}?erro=${encodeURIComponent(
+        "Não consegui mexer nesta montagem: ou ela não existe mais, ou já foi enviada ao CentralSync. Recarregue a página."
+      )}`
+    );
+  }
+
+  redirect(
+    `${voltarPara}?sucesso=${encodeURIComponent(
+      dispensada
+        ? "Montagem removida da fila de envio. Ela continua na lista de montagens, e a tela dela ainda tem o botão para enviar ao CentralSync."
+        : "Montagem de volta na fila de envio do painel."
+    )}`
+  );
+}
+
+export async function dispensarEnvioCentralSyncAction(id: string, origemBruta: string) {
+  await marcarDispensaCentralSync(id, origemBruta, true);
+}
+
+export async function reporNaFilaCentralSyncAction(id: string, origemBruta: string) {
+  await marcarDispensaCentralSync(id, origemBruta, false);
+}
+
+// Limpa de uma vez a fila que o painel está mostrando -- o mesmo "remover"
+// de cima, para as montagens listadas na tela naquele momento.
+//
+// Os ids vêm fixados com .bind, e não de um campo do formulário: são
+// exatamente os que o admin viu quando a página carregou. Assim uma
+// conclusão que chegou entre a página abrir e o clique acontecer não é
+// varrida junto sem ninguém ter visto.
+export async function dispensarFilaCentralSyncAction(ids: string[]) {
+  await requireAdmin();
+
+  const { count } = await prisma.montagem.updateMany({
+    where: { id: { in: ids }, notificadoCentralSyncEm: null },
+    data: { dispensadoCentralSyncEm: new Date() },
+  });
+
+  for (const id of ids) revalidatePath(`/admin/montagens/${id}`);
+  revalidatePath("/admin");
+
+  if (count === 0) {
+    redirect(
+      `/admin?erro=${encodeURIComponent(
+        "Nada foi removido: essa fila já tinha mudado. Recarregue a página."
+      )}`
+    );
+  }
+
+  redirect(
+    `/admin?sucesso=${encodeURIComponent(
+      `${count} montagem(ns) removida(s) da fila de envio. Elas continuam na lista de montagens, e cada tela ainda tem o botão para enviar ao CentralSync.`
+    )}`
   );
 }
 

@@ -1,12 +1,18 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { confirmarEnvioCentralSyncAction } from "@/lib/actions/montagens";
+import {
+  confirmarEnvioCentralSyncAction,
+  dispensarEnvioCentralSyncAction,
+  dispensarFilaCentralSyncAction,
+} from "@/lib/actions/montagens";
 import { PREFIXO_PEDIDO_CENTRALSYNC, PREFIXOS_FORA_DA_CONFIRMACAO } from "@/lib/centralsync";
 import { valorDevidoPelaLoja } from "@/lib/financeiro";
 import { formatarData, formatarDataHora, formatarMoeda, STATUS_COLOR, STATUS_LABEL } from "@/lib/format";
 import { inicioDoMesLocal } from "@/lib/datas";
-import { Alerta, Badge, Card, LinkButton, PageHeader, StatCard, Vazio } from "@/components/ui";
+import { Alerta, Badge, Button, Card, LinkButton, PageHeader, StatCard, Vazio } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
+import { FormConfirmar } from "@/components/FormConfirmar";
+import { AcoesCliente } from "@/components/AcoesCliente";
 
 // Teto de tempo das Server Actions desta página (a plataforma lê isto do
 // build). O envio ao CentralSync espera uma Cloud Function que quase sempre
@@ -73,6 +79,11 @@ export default async function AdminDashboardPage({
       select: {
         id: true,
         clienteNome: true,
+        // Endereço e telefone ficam na própria lista: é daqui que sai a
+        // rota do dia, e abrir montagem por montagem só para ver para onde
+        // ir (e para quem ligar) era o passo a mais de sempre.
+        clienteEndereco: true,
+        clienteTelefone: true,
         dataAgendada: true,
         status: true,
         loja: { select: { nome: true } },
@@ -89,6 +100,11 @@ export default async function AdminDashboardPage({
       where: {
         status: "CONCLUIDO",
         notificadoCentralSyncEm: null,
+        // Removida da fila pelo próprio admin (botão "Remover da fila"):
+        // continua na lista de montagens e com o botão de envio na tela
+        // dela, só não ocupa mais espaço aqui. Ver
+        // dispensarEnvioCentralSyncAction.
+        dispensadoCentralSyncEm: null,
         // Precisa dizer o mesmo que podeEnviarAoCentralSync
         // (lib/centralsync.ts). Se a fila daqui e a checagem de lá
         // discordarem, a montagem some do painel mesmo com o botão da tela
@@ -253,7 +269,7 @@ export default async function AdminDashboardPage({
                     )}
                   </div>
                 </div>
-                <div className="flex shrink-0 gap-2">
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
                   {m.fotoProdutoUrl && temAssinaturas.has(m.id) ? (
                     <form action={confirmarEnvioCentralSyncAction.bind(null, m.id, "painel")}>
                       <SubmitButton className="px-3 py-2 text-sm" pendingText="Enviando…">
@@ -269,17 +285,42 @@ export default async function AdminDashboardPage({
                       Abrir montagem
                     </LinkButton>
                   )}
+                  {/* Saída da fila que não passa pela loja: montagem antiga,
+                      teste, serviço acertado por fora. Só marca uma data --
+                      ver dispensarEnvioCentralSyncAction. */}
+                  <FormConfirmar
+                    action={dispensarEnvioCentralSyncAction.bind(null, m.id, "painel")}
+                    mensagem={`Tirar a montagem de ${m.clienteNome} desta fila, sem enviar nada para a loja? Nada é apagado: ela continua na lista de montagens, e a tela dela mantém o botão de enviar ao CentralSync — é de lá que dá para devolvê-la à fila.`}
+                  >
+                    <Button type="submit" variante="fantasma" className="px-3 py-2 text-sm">
+                      Remover da fila
+                    </Button>
+                  </FormConfirmar>
                 </div>
               </div>
             ))}
           </div>
 
-          {temMaisNaFila ? (
-            <p className="mt-3 text-sm text-slate-500">
-              Há mais montagens esperando envio. Envie estas e recarregue a
-              página para ver as próximas.
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-3">
+            <p className="text-sm text-slate-500">
+              {temMaisNaFila
+                ? "Há mais montagens esperando envio. Envie ou remova estas e recarregue a página para ver as próximas."
+                : "Remover não avisa a loja e não apaga nada: só tira a montagem desta caixa."}
             </p>
-          ) : null}
+            {/* Limpar a fila de uma vez. Os ids vão fixados com .bind, então
+                a ação mexe só nestas montagens -- uma conclusão que chegar
+                depois desta página carregar não é varrida junto. */}
+            {filaVisivel.length > 1 ? (
+              <FormConfirmar
+                action={dispensarFilaCentralSyncAction.bind(null, idsDaFila)}
+                mensagem={`Tirar desta fila as ${filaVisivel.length} montagens listadas, sem enviar nada para as lojas? Nada é apagado: todas continuam na lista de montagens, cada uma com o seu botão de envio.`}
+              >
+                <Button type="submit" variante="fantasma" className="px-3 py-2 text-sm">
+                  Remover as {filaVisivel.length} da lista
+                </Button>
+              </FormConfirmar>
+            ) : null}
+          </div>
         </Card>
       ) : null}
 
@@ -318,25 +359,49 @@ export default async function AdminDashboardPage({
           <Vazio>Nenhuma montagem pendente ou em andamento no momento.</Vazio>
         ) : (
           <div className="space-y-3">
+            {/* O cartão inteiro não é mais um link: dentro dele agora há
+                links próprios (Waze, ligar, WhatsApp), e âncora dentro de
+                âncora não é HTML válido -- no celular o toque caía no link
+                de fora e abria a montagem em vez de navegar. Quem abre a
+                montagem é o nome do cliente, e o "Abrir montagem" no fim
+                da linha de atalhos. */}
             {proximas.map((m) => (
-              <Link key={m.id} href={`/admin/montagens/${m.id}`}>
-                <Card className="transition-shadow hover:shadow-md">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
-                      <p className="font-semibold text-gray-900">{m.clienteNome}</p>
-                      <p className="text-sm text-gray-500">
-                        {m.loja.nome} · {m.montador ? m.montador.nome : "Sem montador"}
-                      </p>
-                      <p className="mt-1 text-xs text-gray-400">
-                        {m.dataAgendada ? `Agendado para ${formatarData(m.dataAgendada)}` : "Sem data definida"}
-                      </p>
-                    </div>
-                    <Badge className={STATUS_COLOR[m.status]}>
-                      {STATUS_LABEL[m.status]}
-                    </Badge>
+              <Card key={m.id} className="transition-shadow hover:shadow-md">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <Link
+                      href={`/admin/montagens/${m.id}`}
+                      className="font-semibold text-gray-900 hover:underline"
+                    >
+                      {m.clienteNome}
+                    </Link>
+                    <p className="text-sm text-gray-500">
+                      {m.loja.nome} · {m.montador ? m.montador.nome : "Sem montador"}
+                    </p>
+                    <p className="mt-1 text-xs text-gray-400">
+                      {m.dataAgendada ? `Agendado para ${formatarData(m.dataAgendada)}` : "Sem data definida"}
+                    </p>
                   </div>
-                </Card>
-              </Link>
+                  <Badge className={STATUS_COLOR[m.status]}>
+                    {STATUS_LABEL[m.status]}
+                  </Badge>
+                </div>
+
+                <p className="mt-2 text-sm text-slate-900">{m.clienteEndereco}</p>
+
+                <AcoesCliente
+                  endereco={m.clienteEndereco}
+                  telefone={m.clienteTelefone}
+                  className="mt-3"
+                >
+                  <Link
+                    href={`/admin/montagens/${m.id}`}
+                    className="inline-flex items-center gap-1 text-sm font-medium text-navy hover:underline"
+                  >
+                    🔧 Abrir montagem
+                  </Link>
+                </AcoesCliente>
+              </Card>
             ))}
           </div>
         )}
