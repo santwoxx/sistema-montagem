@@ -209,9 +209,11 @@ export default async function AdminDashboardPage({
       {filaVisivel.length > 0 ? (
         <Card className="mb-6 border-blue-200 bg-blue-50/40">
           <p className="font-semibold text-slate-900">
-            📤 {temMaisNaFila ? `Mais de ${LIMITE_FILA}` : filaVisivel.length} montagem
-            {filaVisivel.length > 1 ? "ns" : ""} pronta
-            {filaVisivel.length > 1 ? "s" : ""} para enviar ao CentralSync
+            {/* "montagem" + "ns" saía "montagemns" na tela quando havia mais
+                de uma -- o plural troca a palavra inteira. */}
+            📤 {temMaisNaFila ? `Mais de ${LIMITE_FILA}` : filaVisivel.length}{" "}
+            {filaVisivel.length > 1 ? "montagens prontas" : "montagem pronta"} para
+            enviar ao CentralSync
           </p>
           <p className="mt-1 text-sm text-slate-500">
             Quem montou já concluiu aqui. Confira o comprovante e envie para a
