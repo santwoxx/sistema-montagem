@@ -20,16 +20,30 @@ export const PREFIXO_ENTREGA_AVULSA = "mf-";
 
 // Serviços que o CentralSync manda para cá mas que NÃO são a montagem da
 // entrega: desmontagem (`DESM-`) e assistência (`ASSIST-`). Os dois chegam
-// como montagem comum -- é o único tipo que este sistema tem --, mas mandar
-// uma confirmação de montagem deles marca a entrega original como MONTADA lá
-// e paga a comissão cheia de montagem, que não é o combinado.
-//
-// Até agora quem os segurava era só o fato de não começarem com "del-".
-// Agora que a loja integrada também libera o envio (montagem lançada à mão,
-// ver podeEnviarAoCentralSync), a exclusão precisa ser explícita: eles vêm
-// da Central Móveis como qualquer outro pedido dela. Ver
+// como montagem comum -- é o único tipo que este sistema tem. Ver
 // DeliveriesView.tsx/darioMontagem.ts do CentralSync, onde os dois nascem.
-export const PREFIXOS_FORA_DA_CONFIRMACAO = ["desm-", "assist-"];
+//
+// Eles ficavam sem nenhum botão de envio, então o comprovante (foto +
+// assinaturas) de uma assistência não tinha como chegar à loja: o serviço era
+// feito e do outro lado ninguém via. O medo era marcar a entrega original
+// como MONTADA e pagar a comissão cheia de montagem -- mas quem escolhe o id
+// enviado é idDaEntregaNoCentralSync, e para estes ele devolve `mf-...`
+// (avulso), não o id da entrega. Do lado de lá, `completeAssembly` recusa um
+// id que não existe em `deliveries`, então a confirmação entra na caixa
+// "Montagens Feitas" só como comprovante para conferência: nenhuma entrega
+// muda de status e nenhum acerto de montagem é gravado.
+//
+// O que sustenta isso é o rótulo -- ver nomeParaCentralSync, que manda
+// "[ASSISTÊNCIA]"/"[DESMONTAGEM]" na frente do nome. Sem ele a linha chega
+// lá parecendo uma montagem comum, e aí o risco de acerto errado volta pela
+// mão de quem confere.
+export const PREFIXOS_SERVICO_SEM_MONTAGEM = ["desm-", "assist-"];
+
+/** Como cada prefixo se chama na tela da loja. */
+const ROTULO_SERVICO: Record<string, string> = {
+  "desm-": "DESMONTAGEM",
+  "assist-": "ASSISTÊNCIA",
+};
 
 function comecaCom(numeroPedido: string | null, prefixo: string) {
   return (
@@ -49,10 +63,19 @@ export function pareceIdDoCentralSync(numeroPedido: string | null): numeroPedido
   return comecaCom(numeroPedido, PREFIXO_PEDIDO_CENTRALSYNC);
 }
 
-// Desmontagem ou assistência: serviço do CentralSync que não pode virar
-// confirmação de montagem lá (ver PREFIXOS_FORA_DA_CONFIRMACAO).
+// Desmontagem ou assistência: serviço do CentralSync que não é a montagem da
+// entrega (ver PREFIXOS_SERVICO_SEM_MONTAGEM).
 export function ehDesmontagemOuAssistencia(numeroPedido: string | null): boolean {
-  return PREFIXOS_FORA_DA_CONFIRMACAO.some((prefixo) => comecaCom(numeroPedido, prefixo));
+  return PREFIXOS_SERVICO_SEM_MONTAGEM.some((prefixo) => comecaCom(numeroPedido, prefixo));
+}
+
+/**
+ * "ASSISTÊNCIA", "DESMONTAGEM" ou null se for montagem mesmo. É o que vai na
+ * frente do nome enviado à loja, para a linha não ser lida como montagem.
+ */
+export function rotuloDoServico(numeroPedido: string | null): string | null {
+  const prefixo = PREFIXOS_SERVICO_SEM_MONTAGEM.find((p) => comecaCom(numeroPedido, p));
+  return prefixo ? ROTULO_SERVICO[prefixo] ?? null : null;
 }
 
 // Se dá para mandar a conclusão desta montagem para a Central Móveis.
@@ -67,8 +90,10 @@ export function podeEnviarAoCentralSync(montagem: {
   loja?: { integraCentralSync: boolean } | null;
 }): boolean {
   if (pareceIdDoCentralSync(montagem.numeroPedido)) return true;
-  if (!montagem.loja?.integraCentralSync) return false;
-  return !ehDesmontagemOuAssistencia(montagem.numeroPedido);
+  // Desmontagem e assistência entram aqui junto com as montagens lançadas à
+  // mão: as três vão como avulsas, e o que diz o que cada uma é fica no
+  // rótulo (ver PREFIXOS_SERVICO_SEM_MONTAGEM).
+  return Boolean(montagem.loja?.integraCentralSync);
 }
 
 // Sob qual id a confirmação é gravada do lado do CentralSync.
@@ -118,11 +143,20 @@ export function nomeParaCentralSync(montagem: {
   const quemMontou =
     montagem.montador?.nome?.trim() || (montagem.feitoPorAdm ? "Equipe da empresa" : "");
 
+  // Assistência e desmontagem vão com a etiqueta na frente de tudo, e não no
+  // fim: o campo é cortado em 190 caracteres do outro lado, e é justamente
+  // esta palavra que impede a linha de ser acertada como montagem. Cortada,
+  // ela vira uma montagem comum aos olhos de quem confere.
+  const rotulo = rotuloDoServico(montagem.numeroPedido);
+
   return [
+    rotulo ? `[${rotulo}]` : "",
     quemMontou,
     numeroPedido ? `Pedido ${numeroPedido}` : "",
     montagem.clienteNome.trim(),
-    "nota lançada à mão no MontaFácil",
+    rotulo
+      ? "não é montagem — só comprovante, não lançar acerto de montagem"
+      : "nota lançada à mão no MontaFácil",
   ]
     .filter(Boolean)
     .join(" · ")

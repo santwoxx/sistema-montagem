@@ -271,6 +271,16 @@ O CentralSync é o sistema da loja. A ligação entre os dois é de mão dupla:
    aparece na caixa flutuante "Montagens Feitas" da aba Entregas &
    Assinaturas, e um administrador da loja confere e confirma.
 
+   **Assistência e desmontagem** (pedidos que chegam com `ASSIST-` ou
+   `DESM-`) usam o mesmo botão, mas o que sai daqui é só o comprovante. Elas
+   vão como serviço avulso — o id enviado é `mf-…`, não o da entrega — e
+   chegam à loja com a etiqueta `[ASSISTÊNCIA]` / `[DESMONTAGEM]` na frente
+   do nome de quem fez. Do outro lado isso **não** dá baixa na entrega
+   original nem lança acerto de montagem: serve para a loja ver a foto e as
+   assinaturas do serviço, que antes não tinham como chegar até lá. O acerto
+   da assistência continua sendo o combinado à parte (1% sobre a base, fora
+   dos 8% da montagem).
+
    Se faltar a foto ou alguma assinatura (por exemplo, quando a montagem foi
    marcada como concluída direto pelo painel, sem passar pelo aplicativo do
    montador), o envio é recusado com o aviso do que está faltando — em vez de

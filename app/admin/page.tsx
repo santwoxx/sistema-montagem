@@ -5,7 +5,7 @@ import {
   dispensarEnvioCentralSyncAction,
   dispensarFilaCentralSyncAction,
 } from "@/lib/actions/montagens";
-import { PREFIXO_PEDIDO_CENTRALSYNC, PREFIXOS_FORA_DA_CONFIRMACAO } from "@/lib/centralsync";
+import { PREFIXO_PEDIDO_CENTRALSYNC } from "@/lib/centralsync";
 import { emCentavos, valorDevidoPelaLoja } from "@/lib/financeiro";
 import { formatarData, formatarDataHora, formatarMoeda, STATUS_COLOR, STATUS_LABEL } from "@/lib/format";
 import { intervaloDoMes, mesAtual } from "@/lib/datas";
@@ -137,21 +137,11 @@ export default async function AdminDashboardPage({
           // Pedido vindo da integração. "insensitive" porque o número fica
           // num campo que o admin pode reescrever.
           { numeroPedido: { startsWith: PREFIXO_PEDIDO_CENTRALSYNC, mode: "insensitive" } },
-          // Montagem lançada à mão numa loja atendida pelo CentralSync.
-          // Desmontagem e assistência ficam de fora; o OR com `null` existe
-          // porque em SQL `NOT (coluna LIKE ...)` com coluna nula não é
-          // verdadeiro -- sem ele, montagem sem número sumia da fila.
-          {
-            loja: { integraCentralSync: true },
-            OR: [
-              { numeroPedido: null },
-              {
-                AND: PREFIXOS_FORA_DA_CONFIRMACAO.map((prefixo) => ({
-                  NOT: { numeroPedido: { startsWith: prefixo, mode: "insensitive" as const } },
-                })),
-              },
-            ],
-          },
+          // Qualquer serviço concluído numa loja atendida pelo CentralSync:
+          // montagem lançada à mão, desmontagem e assistência. As três vão
+          // como avulsas e chegam lá rotuladas (ver nomeParaCentralSync) --
+          // por isso desmontagem e assistência não são mais filtradas aqui.
+          { loja: { integraCentralSync: true } },
         ],
       },
       orderBy: { concluidoEm: "asc" },

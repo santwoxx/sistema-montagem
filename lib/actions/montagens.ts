@@ -14,7 +14,6 @@ import {
 } from "@/lib/upload";
 import { linkWhatsapp, OCORRENCIA_LABEL, paraNumeroBr } from "@/lib/format";
 import {
-  ehDesmontagemOuAssistencia,
   idDaEntregaNoCentralSync,
   nomeParaCentralSync,
   podeEnviarAoCentralSync,
@@ -712,8 +711,8 @@ export async function confirmarEnvioCentralSyncAction(
 
   if (!podeEnviarAoCentralSync(montagem)) {
     comErro(
-      ehDesmontagemOuAssistencia(montagem.numeroPedido)
-        ? "Desmontagem e assistência não viram confirmação de montagem no CentralSync — lá isso marcaria a entrega original como montada de novo. Acerte esse serviço direto com a loja."
+      montagem.lojaId === null
+        ? "Serviço particular não vai para o CentralSync: foi fechado direto com o cliente, não há loja do outro lado para receber o comprovante."
         : "Esta montagem não é de uma loja ligada ao CentralSync, então não há o que enviar para lá. Se for, marque \"Loja atendida pelo CentralSync\" no cadastro dela em Lojas."
     );
     return;

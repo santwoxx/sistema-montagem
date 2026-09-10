@@ -29,6 +29,7 @@ import {
   STATUS_LABEL,
 } from "@/lib/format";
 import { VALOR_PARTICULAR_FORM } from "@/lib/servico";
+import { rotuloDoServico } from "@/lib/centralsync";
 
 // Teto de tempo das Server Actions desta página (a plataforma lê isto do
 // build). O envio ao CentralSync espera uma Cloud Function que quase sempre
@@ -78,6 +79,11 @@ export default async function MontagemDetalhePage({
   // particular não tem loja nenhuma. O fallback existe só porque o
   // TypeScript não consegue provar isso a partir de podeEnviarAoCentralSync.
   const nomeLojaEnvio = montagem.loja?.nome ?? "loja";
+  // Assistência e desmontagem usam o mesmo botão da montagem, mas o que sai
+  // daqui é só comprovante: vai como serviço avulso, rotulado, e do outro
+  // lado não marca entrega nem lança acerto de montagem. A tela precisa
+  // dizer isso, senão o admin clica achando que está dando baixa na entrega.
+  const rotuloServico = rotuloDoServico(montagem.numeroPedido);
 
   return (
     <div>
@@ -237,10 +243,22 @@ export default async function MontagemDetalhePage({
       {vaiParaCentralSync ? (
         <Card className="mb-6 border-blue-100">
           <p className="text-sm font-medium text-slate-500">
-            {veioDaIntegracao
-              ? "Integração CentralSync"
-              : `Enviar para a ${nomeLojaEnvio}`}
+            {rotuloServico
+              ? `${rotuloServico} · enviar comprovante para a ${nomeLojaEnvio}`
+              : veioDaIntegracao
+                ? "Integração CentralSync"
+                : `Enviar para a ${nomeLojaEnvio}`}
           </p>
+          {rotuloServico ? (
+            <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-900">
+              Isto é {rotuloServico.toLowerCase()}, não montagem. O envio vai
+              como serviço avulso e chega à loja marcado como
+              &ldquo;[{rotuloServico}]&rdquo;: serve para eles verem a foto e as
+              assinaturas. <strong className="font-semibold">Não</strong> dá
+              baixa na entrega original nem lança acerto de montagem — a
+              assistência continua sendo acertada à parte.
+            </p>
+          ) : null}
           {montagem.notificadoCentralSyncEm ? (
             <>
               <p className="mt-2 text-sm text-emerald-700">
@@ -253,9 +271,11 @@ export default async function MontagemDetalhePage({
               </p>
               <form action={confirmarEnvioCentralSyncAction.bind(null, montagem.id, "montagem")}>
                 <SubmitButton pendingText="Reenviando…">
-                  {veioDaIntegracao
-                    ? "Reenviar ao CentralSync"
-                    : `Reenviar para a ${nomeLojaEnvio}`}
+                  {rotuloServico
+                    ? "Reenviar comprovante"
+                    : veioDaIntegracao
+                      ? "Reenviar ao CentralSync"
+                      : `Reenviar para a ${nomeLojaEnvio}`}
                 </SubmitButton>
               </form>
             </>
@@ -302,9 +322,11 @@ export default async function MontagemDetalhePage({
                   </div>
                 )}
                 <SubmitButton pendingText="Enviando…">
-                  {veioDaIntegracao
-                    ? "Enviar ao CentralSync"
-                    : `Enviar para a ${nomeLojaEnvio}`}
+                  {rotuloServico
+                    ? "Enviar comprovante"
+                    : veioDaIntegracao
+                      ? "Enviar ao CentralSync"
+                      : `Enviar para a ${nomeLojaEnvio}`}
                 </SubmitButton>
               </form>
               {/* Removida da fila do painel (botão "Remover da fila" de lá).
@@ -337,9 +359,11 @@ export default async function MontagemDetalhePage({
             </>
           ) : (
             <p className="mt-1 text-sm text-slate-500">
-              {veioDaIntegracao
-                ? "Esse pedido veio do CentralSync. Quando quem for montar concluir (foto + assinaturas), a montagem aparece aqui e no painel geral com o botão para você conferir e enviar a conclusão para a loja."
-                : `Assim que esta montagem for concluída (foto + assinaturas), o botão para enviar o comprovante para a ${nomeLojaEnvio} aparece aqui.`}
+              {rotuloServico
+                ? `Assim que este serviço for concluído (foto + assinaturas), o botão para enviar o comprovante para a ${nomeLojaEnvio} aparece aqui.`
+                : veioDaIntegracao
+                  ? "Esse pedido veio do CentralSync. Quando quem for montar concluir (foto + assinaturas), a montagem aparece aqui e no painel geral com o botão para você conferir e enviar a conclusão para a loja."
+                  : `Assim que esta montagem for concluída (foto + assinaturas), o botão para enviar o comprovante para a ${nomeLojaEnvio} aparece aqui.`}
             </p>
           )}
         </Card>
