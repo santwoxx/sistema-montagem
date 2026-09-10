@@ -28,6 +28,7 @@ import {
   STATUS_COLOR,
   STATUS_LABEL,
 } from "@/lib/format";
+import { VALOR_PARTICULAR_FORM } from "@/lib/servico";
 
 // Teto de tempo das Server Actions desta página (a plataforma lê isto do
 // build). O envio ao CentralSync espera uma Cloud Function que quase sempre
@@ -72,6 +73,11 @@ export default async function MontagemDetalhePage({
   // não tem entrega do outro lado, então vai como montagem avulsa.
   const veioDaIntegracao = pareceIdDoCentralSync(montagem.numeroPedido);
   const vaiParaCentralSync = podeEnviarAoCentralSync(montagem);
+  // Dentro do bloco do CentralSync a loja sempre existe: só se chega lá por
+  // pedido da integração ou por `loja.integraCentralSync`, e um serviço
+  // particular não tem loja nenhuma. O fallback existe só porque o
+  // TypeScript não consegue provar isso a partir de podeEnviarAoCentralSync.
+  const nomeLojaEnvio = montagem.loja?.nome ?? "loja";
 
   return (
     <div>
@@ -233,7 +239,7 @@ export default async function MontagemDetalhePage({
           <p className="text-sm font-medium text-slate-500">
             {veioDaIntegracao
               ? "Integração CentralSync"
-              : `Enviar para a ${montagem.loja.nome}`}
+              : `Enviar para a ${nomeLojaEnvio}`}
           </p>
           {montagem.notificadoCentralSyncEm ? (
             <>
@@ -249,7 +255,7 @@ export default async function MontagemDetalhePage({
                 <SubmitButton pendingText="Reenviando…">
                   {veioDaIntegracao
                     ? "Reenviar ao CentralSync"
-                    : `Reenviar para a ${montagem.loja.nome}`}
+                    : `Reenviar para a ${nomeLojaEnvio}`}
                 </SubmitButton>
               </form>
             </>
@@ -298,7 +304,7 @@ export default async function MontagemDetalhePage({
                 <SubmitButton pendingText="Enviando…">
                   {veioDaIntegracao
                     ? "Enviar ao CentralSync"
-                    : `Enviar para a ${montagem.loja.nome}`}
+                    : `Enviar para a ${nomeLojaEnvio}`}
                 </SubmitButton>
               </form>
               {/* Removida da fila do painel (botão "Remover da fila" de lá).
@@ -333,7 +339,7 @@ export default async function MontagemDetalhePage({
             <p className="mt-1 text-sm text-slate-500">
               {veioDaIntegracao
                 ? "Esse pedido veio do CentralSync. Quando quem for montar concluir (foto + assinaturas), a montagem aparece aqui e no painel geral com o botão para você conferir e enviar a conclusão para a loja."
-                : `Assim que esta montagem for concluída (foto + assinaturas), o botão para enviar o comprovante para a ${montagem.loja.nome} aparece aqui.`}
+                : `Assim que esta montagem for concluída (foto + assinaturas), o botão para enviar o comprovante para a ${nomeLojaEnvio} aparece aqui.`}
             </p>
           )}
         </Card>
@@ -409,7 +415,8 @@ export default async function MontagemDetalhePage({
           comissoes={comissoes}
           modoEdicao
           valoresIniciais={{
-            lojaId: montagem.lojaId,
+            // Sem loja = particular; o select usa o valor reservado.
+            lojaId: montagem.lojaId ?? VALOR_PARTICULAR_FORM,
             montadorId: montagem.feitoPorAdm ? "ADM" : (montagem.montadorId ?? ""),
             clienteNome: montagem.clienteNome,
             clienteTelefone: montagem.clienteTelefone ?? "",

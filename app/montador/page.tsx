@@ -5,19 +5,35 @@ import { Badge, Card, PageHeader, StatCard, Vazio } from "@/components/ui";
 import { AcoesCliente } from "@/components/AcoesCliente";
 import { Estrelas } from "@/components/Estrelas";
 import { formatarData, formatarMoeda, STATUS_COLOR, STATUS_LABEL } from "@/lib/format";
-import { inicioDoMesLocal } from "@/lib/datas";
+import { intervaloDoMes, mesAtual } from "@/lib/datas";
+import { nomeDaOrigem } from "@/lib/servico";
 
 export default async function PainelMontadorPage() {
   const session = await requireMontador();
 
-  const inicioMes = inicioDoMesLocal();
+  // O mês corrente no fuso do negócio, como intervalo [início, fim).
+  const { inicio: inicioMes, fim: fimMes } = intervaloDoMes(mesAtual());
+
+  // O que conta como "do mês" para o montador é o serviço que ele concluiu
+  // no mês -- não o que foi cadastrado no mês. Estes cartões contavam por
+  // `createdAt`, então uma montagem lançada em agosto e concluída em
+  // setembro não aparecia em nenhum dos dois meses aqui, enquanto a lista
+  // "Concluídas recentemente" logo abaixo (e o /montador/financeiro, que
+  // sempre contou por conclusão) já mostravam ela. Era essa a diferença
+  // entre o total dos cartões e a soma da lista.
+  const concluidasNoMes = {
+    montadorId: session.sub,
+    status: "CONCLUIDO",
+    concluidoEm: { gte: inicioMes, lt: fimMes },
+  } as const;
 
   const [
     ativas,
     concluidasRecentes,
     valorPendenteAgg,
-    aReceberAgg,
+    ganhosMesAgg,
     faturamentoMesAgg,
+    concluidasNoMesCount,
     avaliacaoAgg,
     avaliacoesRecentes,
   ] = await Promise.all([
@@ -59,15 +75,16 @@ export default async function PainelMontadorPage() {
     }),
     prisma.montagem.aggregate({
       _sum: { valorMontador: true },
-      where: { montadorId: session.sub, createdAt: { gte: inicioMes }, status: { not: "CANCELADO" } },
+      where: concluidasNoMes,
     }),
-    // Espelha o "Faturamento do mês" do painel do admin: valor BRUTO
-    // (valorServico) das montagens designadas ao montador no mês, não o
-    // ganho dele (isso é o card "A receber", que aplica a % da comissão).
+    // Valor BRUTO (valorServico) das montagens que ele concluiu no mês, não
+    // o ganho dele -- isso é o cartão "Ganhos do mês", que já vem com a
+    // comissão aplicada.
     prisma.montagem.aggregate({
       _sum: { valorServico: true },
-      where: { montadorId: session.sub, createdAt: { gte: inicioMes }, status: { not: "CANCELADO" } },
+      where: concluidasNoMes,
     }),
+    prisma.montagem.count({ where: concluidasNoMes }),
     prisma.avaliacao.aggregate({
       _avg: { estrelas: true },
       _count: { _all: true },
@@ -88,8 +105,15 @@ export default async function PainelMontadorPage() {
     <div>
       <PageHeader titulo={`Olá, ${session.nome.split(" ")[0]}`} descricao="Suas montagens designadas." />
 
-      <div className="mb-6 grid grid-cols-1 gap-4 min-[420px]:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-6 grid grid-cols-1 gap-4 min-[420px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <StatCard titulo="Montagens pendentes" valor={String(ativas.length)} cor="text-amber-600" icone="⏳" />
+        <StatCard
+          titulo="Montagens no mês"
+          valor={String(concluidasNoMesCount)}
+          sub="Concluídas por você neste mês"
+          cor="text-blue-600"
+          icone="📋"
+        />
         <StatCard
           titulo="Valor pendente"
           valor={formatarMoeda(valorPendenteAgg._sum.valorMontador)}
@@ -97,17 +121,21 @@ export default async function PainelMontadorPage() {
           cor="text-amber-600"
           icone="🧾"
         />
+        {/* "A receber" era enganoso: o valor inclui montagens que já foram
+            pagas ao montador. O que este cartão responde é quanto ele ganhou
+            com o que concluiu no mês -- que é a soma da lista de concluídas
+            logo abaixo. */}
         <StatCard
-          titulo="A receber"
-          valor={formatarMoeda(aReceberAgg._sum.valorMontador)}
-          sub="Sua parte sobre as montagens do mês"
+          titulo="Ganhos do mês"
+          valor={formatarMoeda(ganhosMesAgg._sum.valorMontador)}
+          sub="Sua parte nas montagens concluídas no mês"
           cor="text-emerald-600"
           icone="💰"
         />
         <StatCard
           titulo="Faturamento do mês"
           valor={formatarMoeda(faturamentoMesAgg._sum.valorServico)}
-          sub="Valor total das montagens do mês"
+          sub="Valor cheio das montagens concluídas no mês"
           cor="text-blue-600"
           icone="📈"
         />
@@ -166,7 +194,7 @@ export default async function PainelMontadorPage() {
                   >
                     {m.clienteNome}
                   </Link>
-                  <p className="text-sm text-gray-500">{m.loja.nome}</p>
+                  <p className="text-sm text-gray-500">{nomeDaOrigem(m.loja)}</p>
                   <p className="mt-1 text-xs text-gray-400">
                     {m.dataAgendada ? formatarData(m.dataAgendada) : "Sem data definida"}
                   </p>
@@ -212,7 +240,7 @@ export default async function PainelMontadorPage() {
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
                     <p className="font-semibold text-gray-900">{m.clienteNome}</p>
-                    <p className="text-sm text-gray-500">{m.loja.nome}</p>
+                    <p className="text-sm text-gray-500">{nomeDaOrigem(m.loja)}</p>
                     <p className="mt-1 text-xs text-gray-400">
                       Concluída em {formatarData(m.concluidoEm)}
                     </p>

@@ -22,6 +22,7 @@ import { Estrelas } from "@/components/Estrelas";
 import { Avatar } from "@/components/Avatar";
 import { SubmitButton } from "@/components/SubmitButton";
 import { formatarData, formatarMoeda, STATUS_COLOR, STATUS_LABEL } from "@/lib/format";
+import { nomeDaOrigem } from "@/lib/servico";
 
 export default async function MontadorDetalhePage({
   params,
@@ -271,7 +272,7 @@ export default async function MontadorDetalhePage({
                     <div>
                       <p className="font-semibold text-gray-900">{m.clienteNome}</p>
                       <p className="text-sm text-gray-500">
-                        {m.loja.nome} · {formatarMoeda(m.valorMontador)} de comissão
+                        {nomeDaOrigem(m.loja)} · {formatarMoeda(m.valorMontador)} de comissão
                       </p>
                       <p className="text-xs text-gray-400">{formatarData(m.createdAt)}</p>
                     </div>

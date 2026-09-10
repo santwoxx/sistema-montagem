@@ -2,22 +2,10 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { requireUsuario } from "@/lib/auth";
 import { apenasDigitos } from "@/lib/format";
-
-async function obterUrlBase() {
-  const configurada = process.env.NEXT_PUBLIC_APP_URL;
-  if (configurada) return configurada.replace(/\/+$/, "");
-
-  const cabecalhos = await headers();
-  const host = cabecalhos.get("host") ?? "localhost:3000";
-  const proto =
-    cabecalhos.get("x-forwarded-proto") ??
-    (host.startsWith("localhost") ? "http" : "https");
-  return `${proto}://${host}`;
-}
+import { obterUrlBase } from "@/lib/url";
 
 /**
  * Gera o link de avaliação e a mensagem de WhatsApp para o cliente, e

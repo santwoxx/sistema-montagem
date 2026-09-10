@@ -6,13 +6,16 @@ import {
   dispensarFilaCentralSyncAction,
 } from "@/lib/actions/montagens";
 import { PREFIXO_PEDIDO_CENTRALSYNC, PREFIXOS_FORA_DA_CONFIRMACAO } from "@/lib/centralsync";
-import { valorDevidoPelaLoja } from "@/lib/financeiro";
+import { emCentavos, valorDevidoPelaLoja } from "@/lib/financeiro";
 import { formatarData, formatarDataHora, formatarMoeda, STATUS_COLOR, STATUS_LABEL } from "@/lib/format";
-import { inicioDoMesLocal } from "@/lib/datas";
+import { intervaloDoMes, mesAtual } from "@/lib/datas";
+import { obterUrlBase } from "@/lib/url";
 import { Alerta, Badge, Button, Card, LinkButton, PageHeader, StatCard, Vazio } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
 import { FormConfirmar } from "@/components/FormConfirmar";
 import { AcoesCliente } from "@/components/AcoesCliente";
+import { LinkAgendamento } from "@/components/LinkAgendamento";
+import { nomeDaOrigem } from "@/lib/servico";
 
 // Teto de tempo das Server Actions desta página (a plataforma lê isto do
 // build). O envio ao CentralSync espera uma Cloud Function que quase sempre
@@ -34,19 +37,30 @@ export default async function AdminDashboardPage({
 
   // setHours() usaria o fuso do servidor (UTC na Vercel), começando o mês
   // às 21h do último dia do mês anterior no horário de Itabuna.
-  const inicioMes = inicioDoMesLocal();
+  const { inicio: inicioMes, fim: fimMes } = intervaloDoMes(mesAtual());
+
+  // O mês do faturamento é o das montagens CONCLUÍDAS no mês. Antes o valor
+  // era somado por `createdAt` enquanto a contagem ao lado ("X concluída(s)
+  // no mês") já era por `concluidoEm` -- o mesmo cartão misturava duas
+  // definições de mês, e nenhuma delas batia com o painel do montador.
+  const concluidasNoMes = {
+    status: "CONCLUIDO",
+    concluidoEm: { gte: inicioMes, lt: fimMes },
+  } as const;
 
   const [
     pendentes,
     emAndamento,
     naoAtribuidas,
     aReceberAgg,
+    aReceberParticularAgg,
     aPagarAgg,
     faturamentoMesAgg,
     concluidasMes,
     montadoresAtivos,
     proximas,
     notasPendentesCount,
+    solicitacoesCount,
     filaCentralSync,
   ] = await Promise.all([
     prisma.montagem.count({ where: { status: "PENDENTE" } }),
@@ -56,7 +70,14 @@ export default async function AdminDashboardPage({
     }),
     prisma.montagem.aggregate({
       _sum: { valorServico: true, valorAssistencia: true },
-      where: { pagoPelaLoja: false, status: { not: "CANCELADO" } },
+      where: { pagoPelaLoja: false, status: { not: "CANCELADO" }, lojaId: { not: null } },
+    }),
+    // Particular não tem acerto de 8%: o cliente deve a nota inteira. Somar
+    // junto com as de loja e aplicar uma regra só devolvia 8% de um valor
+    // que é 100% da empresa.
+    prisma.montagem.aggregate({
+      _sum: { valorServico: true },
+      where: { pagoPelaLoja: false, status: { not: "CANCELADO" }, lojaId: null },
     }),
     prisma.montagem.aggregate({
       _sum: { valorMontador: true },
@@ -64,11 +85,9 @@ export default async function AdminDashboardPage({
     }),
     prisma.montagem.aggregate({
       _sum: { valorServico: true, valorAssistencia: true },
-      where: { createdAt: { gte: inicioMes }, status: { not: "CANCELADO" } },
+      where: concluidasNoMes,
     }),
-    prisma.montagem.count({
-      where: { status: "CONCLUIDO", concluidoEm: { gte: inicioMes } },
-    }),
+    prisma.montagem.count({ where: concluidasNoMes }),
     prisma.user.count({ where: { role: "MONTADOR", ativo: true } }),
     prisma.montagem.findMany({
       where: {
@@ -91,6 +110,11 @@ export default async function AdminDashboardPage({
       },
     }),
     prisma.notaPendente.count(),
+    // Pedidos que os clientes mandaram pelo link público (/agendar) e que
+    // ainda não viraram montagem nem foram recusados.
+    prisma.solicitacaoAgendamento.count({
+      where: { atendidaEm: null, recusadaEm: null },
+    }),
     // Fila de montagens do CentralSync já concluídas aqui e ainda não
     // enviadas para a loja. As assinaturas ficam de fora do select de
     // propósito: são imagens em base64 (campos Text grandes) e aqui só
@@ -169,10 +193,12 @@ export default async function AdminDashboardPage({
     : [];
   const temAssinaturas = new Set(filaComAssinaturas.map((m) => m.id));
 
-  const aReceberDasLojas = valorDevidoPelaLoja({
-    valorServico: aReceberAgg._sum.valorServico || 0,
-    valorAssistencia: aReceberAgg._sum.valorAssistencia || 0,
-  });
+  const aReceberDasLojas = emCentavos(
+    valorDevidoPelaLoja({
+      valorServico: aReceberAgg._sum.valorServico || 0,
+      valorAssistencia: aReceberAgg._sum.valorAssistencia || 0,
+    }) + (aReceberParticularAgg._sum.valorServico || 0)
+  );
 
   return (
     <div>
@@ -201,6 +227,21 @@ export default async function AdminDashboardPage({
             </p>
             <p className="text-sm text-slate-500">
               Aguardando revisão para virar montagem. Toque para abrir.
+            </p>
+          </Card>
+        </Link>
+      ) : null}
+
+      {solicitacoesCount > 0 ? (
+        <Link href="/admin/montagens/nova" className="mb-6 block">
+          <Card className="border-emerald-200 bg-emerald-50/50 transition-shadow hover:shadow-md">
+            <p className="font-semibold text-slate-900">
+              📅 {solicitacoesCount} pedido{solicitacoesCount > 1 ? "s" : ""} de
+              agendamento do site
+            </p>
+            <p className="text-sm text-slate-500">
+              O cliente preencheu os dados pelo link público. Confira e
+              transforme em montagem.
             </p>
           </Card>
         </Link>
@@ -257,7 +298,7 @@ export default async function AdminDashboardPage({
                     <p className="truncate text-xs text-slate-400">
                       {m.numeroPedido
                         ? `Entrega ${m.numeroPedido}`
-                        : `Lançada à mão · ${m.loja.nome}`}
+                        : `Lançada à mão · ${nomeDaOrigem(m.loja)}`}
                     </p>
                     {m.fotoProdutoUrl && temAssinaturas.has(m.id) ? null : (
                       <p className="text-xs font-medium text-amber-700">
@@ -336,9 +377,9 @@ export default async function AdminDashboardPage({
           icone="❓"
         />
         <StatCard
-          titulo="A receber das lojas"
+          titulo="A receber (lojas e clientes)"
           valor={formatarMoeda(aReceberDasLojas)}
-          sub="Montagens que a loja ainda não pagou (8% + assistência)"
+          sub="Loja: 8% + assistência · Particular: valor cheio"
           icone="🏬"
         />
         <StatCard
@@ -353,6 +394,10 @@ export default async function AdminDashboardPage({
           cor="text-emerald-600"
           icone="📈"
         />
+      </div>
+
+      <div className="mt-6">
+        <LinkAgendamento url={`${await obterUrlBase()}/agendar`} />
       </div>
 
       <div className="mt-8">
@@ -378,7 +423,7 @@ export default async function AdminDashboardPage({
                       {m.clienteNome}
                     </Link>
                     <p className="text-sm text-gray-500">
-                      {m.loja.nome} · {m.montador ? m.montador.nome : "Sem montador"}
+                      {nomeDaOrigem(m.loja)} · {m.montador ? m.montador.nome : "Sem montador"}
                     </p>
                     <p className="mt-1 text-xs text-gray-400">
                       {m.dataAgendada ? `Agendado para ${formatarData(m.dataAgendada)}` : "Sem data definida"}

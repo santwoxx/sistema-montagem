@@ -93,7 +93,10 @@ model Montagem {
   id           String @id @default(cuid())
   numeroPedido String?
 
-  lojaId     String
+  // Sem loja = serviço particular, fechado direto com o cliente (ver
+  // lib/servico.ts). Nesse caso não existe acerto de loja nem assistência:
+  // o valor da nota é receita cheia da empresa.
+  lojaId     String?
   montadorId String?
 
   clienteNome     String
@@ -159,7 +162,7 @@ model Montagem {
   // Avaliação do cliente sobre o montador, pedida por WhatsApp após a conclusão
   avaliacaoSolicitadaEm DateTime?
 
-  loja        Loja         @relation(fields: [lojaId], references: [id], onDelete: Restrict)
+  loja        Loja?        @relation(fields: [lojaId], references: [id], onDelete: Restrict)
   montador    User?        @relation("MontadorMontagens", fields: [montadorId], references: [id], onDelete: SetNull)
   ocorrencias Ocorrencia[]
   avaliacao   Avaliacao?
@@ -250,4 +253,38 @@ model Avaliacao {
   montador User     @relation("AvaliacoesDoMontador", fields: [montadorId], references: [id], onDelete: Cascade)
 
   @@index([montadorId])
+}
+
+// Pedido de agendamento preenchido pelo próprio cliente, pelo link público
+// de /agendar. É o mesmo papel que a NotaPendente tem para o CentralSync:
+// fica numa fila até um admin conferir e transformar em Montagem — nada
+// entra na agenda (nem no financeiro) sem alguém olhar. Separado da
+// NotaPendente de propósito: aquela chega de um sistema autenticado e traz
+// nota/valor; esta chega de qualquer pessoa com o link e não traz dinheiro
+// nenhum, então as duas filas não podem se misturar na revisão.
+model SolicitacaoAgendamento {
+  id String @id @default(cuid())
+
+  clienteNome     String
+  clienteTelefone String
+  clienteEndereco String
+
+  // O que o cliente quer montar, escrito por ele mesmo.
+  produto     String
+  observacoes String?
+
+  // Preferência de dia e de turno. Não é compromisso: quem agenda de fato
+  // é o admin, ao criar a montagem.
+  dataPreferida DateTime?
+  periodo       String?
+
+  criadaEm DateTime @default(now())
+
+  // Quando o admin resolveu a solicitação, e como. Recusada/atendida saem
+  // da fila mas continuam gravadas — é o histórico de quem pediu orçamento.
+  atendidaEm DateTime?
+  recusadaEm DateTime?
+  montagemId String?
+
+  @@index([criadaEm])
 }

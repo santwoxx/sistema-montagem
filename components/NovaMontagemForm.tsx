@@ -5,10 +5,13 @@ import { Card, Field, Input, Select, StatCard, Textarea } from "@/components/ui"
 import { SubmitButton } from "@/components/SubmitButton";
 import { ImportarNotaCard } from "@/components/ImportarNotaCard";
 import { NotasPendentesCard, type NotaPendenteResumo } from "@/components/NotasPendentesCard";
+import { SolicitacoesCard, type SolicitacaoResumo } from "@/components/SolicitacoesCard";
 import { resolverOuCriarLojaAction, type ResultadoResolucaoLoja } from "@/lib/actions/importar";
 import { pareceIdDoCentralSync } from "@/lib/centralsync";
 import { formatarMoeda, paraInputDate, paraNumeroBr } from "@/lib/format";
 import { comprimirImagem, trocarArquivoDoInput } from "@/lib/imagem";
+import { VALOR_PARTICULAR_FORM } from "@/lib/servico";
+import { PERIODO_LABEL, type PeriodoAgendamento } from "@/lib/validacao";
 
 // Mesmo teto do servidor (lib/upload.ts): acima disso o Next recusa o envio
 // inteiro, então é melhor avisar aqui, com o arquivo ainda na tela.
@@ -42,6 +45,7 @@ export function NovaMontagemForm({
   montadores,
   comissoes,
   notasPendentes,
+  solicitacoes,
   valoresIniciais,
   modoEdicao,
 }: {
@@ -50,6 +54,7 @@ export function NovaMontagemForm({
   montadores: Montador[];
   comissoes: Comissao[];
   notasPendentes?: NotaPendenteResumo[];
+  solicitacoes?: SolicitacaoResumo[];
   valoresIniciais?: {
     lojaId?: string;
     montadorId?: string;
@@ -92,6 +97,7 @@ export function NovaMontagemForm({
   const [observacoes, setObservacoes] = useState(valoresIniciais?.observacoes ?? "");
   const [notaUrl, setNotaUrl] = useState(valoresIniciais?.notaUrl ?? "");
   const [notaPendenteId, setNotaPendenteId] = useState("");
+  const [solicitacaoId, setSolicitacaoId] = useState("");
   // O "Nº do pedido" é um campo de texto comum na tela, mas quando vale
   // "del-…" ele é a chave que liga esta montagem à entrega no CentralSync:
   // trocá-lo pelo número do pedido da loja (que é o que o rótulo e o exemplo
@@ -194,6 +200,27 @@ export function NovaMontagemForm({
     }
   }
 
+  // Pedido que o cliente mandou pelo link público. Já nasce marcado como
+  // particular: quem chega por ali veio direto, sem loja no meio. O admin
+  // pode trocar para uma loja antes de salvar, se for o caso.
+  function usarSolicitacao(s: SolicitacaoResumo) {
+    setClienteNome(s.clienteNome);
+    setClienteTelefone(s.clienteTelefone);
+    setClienteEndereco(s.clienteEndereco);
+    setDescricaoServico(s.produto);
+    setDataAgendada(paraInputDate(s.dataPreferida));
+    const turno = s.periodo ? PERIODO_LABEL[s.periodo as PeriodoAgendamento] : null;
+    setObservacoes(
+      [s.observacoes, turno ? `Turno preferido: ${turno}` : null]
+        .filter(Boolean)
+        .join(" · ")
+    );
+    // Marca qual pedido virou esta montagem: é assim que ele sai da fila
+    // quando o admin salvar (ver criarMontagemAction).
+    setSolicitacaoId(s.id);
+    selecionarLojaOuMontador(VALOR_PARTICULAR_FORM, montadorId);
+  }
+
   // Todo pedido tem assistência, não só comissão do montador — esse
   // percentual é fixo por loja (Loja.percentualAssistencia), não varia por
   // montador, e é sempre recalculado no servidor a partir do valor do
@@ -227,6 +254,10 @@ export function NovaMontagemForm({
   // disabled apagaria justamente o número que se quer proteger.
   const numeroTravado = pareceIdDoCentralSync(numeroPedido) && !numeroDestravado;
 
+  // Serviço fechado direto com o cliente: não há loja para dividir a nota
+  // nem assistência a cobrar dela, então a nota inteira é da empresa.
+  const ehParticular = lojaId === VALOR_PARTICULAR_FORM;
+
   const valorServicoCalculado = useMemo(() => {
     return paraNumeroBr(valorServico) || 0;
   }, [valorServico]);
@@ -252,10 +283,15 @@ export function NovaMontagemForm({
       className="space-y-6"
     >
       <input type="hidden" name="notaPendenteId" value={notaPendenteId} />
+      <input type="hidden" name="solicitacaoId" value={solicitacaoId} />
       <input type="hidden" name="notaUrl" value={notaUrl} />
 
       {!modoEdicao && notasPendentes && notasPendentes.length > 0 ? (
         <NotasPendentesCard notas={notasPendentes} onUsar={usarNotaPendente} />
+      ) : null}
+
+      {!modoEdicao && solicitacoes && solicitacoes.length > 0 ? (
+        <SolicitacoesCard solicitacoes={solicitacoes} onUsar={usarSolicitacao} />
       ) : null}
 
       {!modoEdicao ? (
@@ -306,7 +342,7 @@ export function NovaMontagemForm({
           Loja e montador
         </h2>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Loja">
+          <Field label="Loja" hint="Serviço fechado direto com o cliente? Escolha “Serviço particular”.">
             <Select
               name="lojaId"
               required
@@ -314,6 +350,9 @@ export function NovaMontagemForm({
               onChange={(e) => selecionarLojaOuMontador(e.target.value, montadorId)}
             >
               <option value="">Selecione a loja</option>
+              <option value={VALOR_PARTICULAR_FORM}>
+                Serviço particular (sem loja)
+              </option>
               {lojasDisponiveis.map((l) => (
                 <option key={l.id} value={l.id}>
                   {l.nome}
@@ -490,27 +529,32 @@ export function NovaMontagemForm({
           </Field>
           <Field
             label="Assistência (%)"
-            hint="Preenchido automaticamente conforme a loja escolhida (cadastro da loja). Pode ajustar."
+            hint={
+              ehParticular
+                ? "Não se aplica: assistência é o que a empresa cobra da loja, e num serviço particular não há loja."
+                : "Preenchido automaticamente conforme a loja escolhida (cadastro da loja). Pode ajustar."
+            }
           >
             <Input
               type="text"
               inputMode="decimal"
               name="percentualAssistencia"
-              value={percentualAssistencia}
+              value={ehParticular ? "0" : percentualAssistencia}
               onChange={(e) => {
                 setPercentualAssistencia(e.target.value);
                 setPercentualAssistenciaEditado(true);
               }}
+              disabled={ehParticular}
             />
           </Field>
         </div>
         <div className="mt-4 grid gap-4 sm:grid-cols-3">
           <StatCard
-            titulo="Valor a receber (desta nota)"
+            titulo={ehParticular ? "Valor cobrado do cliente" : "Valor a receber (desta nota)"}
             valor={formatarMoeda(valorServicoCalculado)}
-            sub="O que a loja deve pela montagem"
+            sub={ehParticular ? "Fica inteiro com a empresa" : "O que a loja deve pela montagem"}
             cor="text-emerald-600"
-            icone="🏬"
+            icone={ehParticular ? "🤝" : "🏬"}
           />
           <StatCard
             titulo="Valor estimado para o montador"

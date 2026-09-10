@@ -19,6 +19,7 @@ import {
 } from "@/lib/format";
 import { intervaloDoDia } from "@/lib/datas";
 import type { Prisma } from "@prisma/client";
+import { nomeDaOrigem } from "@/lib/servico";
 
 // O dia agendado é gravado como meio-dia no fuso do negócio (ver paraData em
 // lib/actions/montagens.ts), e intervaloDoDia vai da meia-noite à meia-noite
@@ -264,7 +265,7 @@ export default async function RotaPage({
                           {m.clienteNome}
                         </Link>
                         <p className="text-sm text-slate-500">
-                          {m.loja.nome} ·{" "}
+                          {nomeDaOrigem(m.loja)} ·{" "}
                           {m.feitoPorAdm
                             ? "A própria empresa (ADM)"
                             : m.montador

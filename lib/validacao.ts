@@ -43,3 +43,15 @@ export const STATUS_PERMITIDOS_MONTADOR: StatusMontagemValido[] = [
 // destino de redirecionamento arbitrário.
 export const OrigemEnvioSchema = z.enum(["painel", "montagem"]);
 export type OrigemEnvio = z.infer<typeof OrigemEnvioSchema>;
+
+// Turno preferido no formulário público de agendamento (/agendar). Vale a
+// mesma regra do status acima: a página é pública, então o que chega no
+// campo é texto arbitrário até ser conferido aqui.
+export const PeriodoAgendamentoSchema = z.enum(["MANHA", "TARDE", "QUALQUER"]);
+export type PeriodoAgendamento = z.infer<typeof PeriodoAgendamentoSchema>;
+
+export const PERIODO_LABEL: Record<PeriodoAgendamento, string> = {
+  MANHA: "Manhã",
+  TARDE: "Tarde",
+  QUALQUER: "Qualquer horário",
+};

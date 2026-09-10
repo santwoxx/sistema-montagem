@@ -11,6 +11,13 @@ individual para cada montador.
 - Cadastra as lojas parceiras que enviam pedidos.
 - Define a porcentagem de comissão de cada montador, individualmente por loja.
 - Cria e atribui montagens a um montador específico (ou deixa "a definir").
+- Lança **serviços particulares** — montagem fechada direto com o cliente,
+  sem loja no meio. Em "Nova montagem", escolha "Serviço particular (sem
+  loja)" no campo Loja. Nesses casos não existe assistência (que é o que a
+  empresa cobra da loja) e o valor cobrado fica inteiro com a empresa, em
+  vez dos 8% de acerto — o financeiro separa as duas frentes.
+- Divulga um **link público de agendamento** para o cliente preencher os
+  próprios dados (ver a seção sobre ele mais abaixo).
 - Importa uma nota fiscal para preencher uma montagem nova sozinho: aceita o
   XML da NFe ou uma foto/imagem da nota impressa (a leitura da foto é feita
   por OCR direto no navegador, sem custo). Se a loja da nota ainda não
@@ -29,6 +36,10 @@ individual para cada montador.
 - Tem uma tela financeira com totais por mês, por loja e por montador.
 
 **Painel do montador**
+- No topo, cinco números do mês: montagens pendentes, montagens concluídas
+  no mês, valor pendente, ganhos do mês e faturamento do mês. Tudo que diz
+  "do mês" conta pela **data de conclusão** do serviço — a mesma base da
+  tela Financeiro dele, para os dois números baterem.
 - Vê apenas as montagens atribuídas a ele.
 - Ao abrir uma montagem, vê o endereço do cliente (com link direto para o
   mapa), telefone (com botão de ligar e de WhatsApp), o serviço a ser feito
@@ -188,6 +199,56 @@ Cada arquivo enviado pode ter até **3 MB**. As fotos são reduzidas no navegado
 antes de subir, então na prática nunca chegam perto disso; o limite pesa mesmo
 é para PDF de manual, que precisa ser enviado já reduzido.
 
+## Link de agendamento para o cliente
+
+A página **`/agendar`** é pública: qualquer pessoa com o link consegue abrir,
+sem login. O cliente preenche nome, telefone, endereço, o que precisa ser
+montado, o dia que prefere e o turno.
+
+Isso **não vira montagem sozinho**. O pedido entra numa fila ("Pedidos do
+site") que aparece no painel do admin e dentro de "Nova montagem": lá o admin
+confere, clica em "Usar este pedido" — o que já preenche o formulário marcado
+como serviço particular, porque quem chega pelo link veio direto, sem loja —
+ajusta valor, comissão e data, e só então salva. Quem não interessa sai da
+fila pelo botão "Recusar", que não apaga o pedido: ele fica gravado como
+histórico de quem procurou a empresa.
+
+O link fica pronto para copiar no painel do admin, no card "Link de
+agendamento do cliente", com botão de mandar por WhatsApp. O endereço é
+montado a partir do domínio em que o sistema está rodando, então funciona em
+`localhost` e no domínio do Vercel sem configurar nada. Se o sistema rodar
+atrás de um proxy que reescreve o host, defina `NEXT_PUBLIC_APP_URL` com o
+endereço público correto.
+
+Por ser um formulário aberto, cada IP pode enviar no máximo 5 pedidos a cada
+10 minutos, e cada campo tem um limite de tamanho — o mesmo mecanismo do
+limite de login (`lib/limite.ts`).
+
+## Serviço particular (sem loja)
+
+Uma montagem particular é, no banco, simplesmente uma montagem **sem loja**
+(`lojaId` nulo) — não existe um campo "é particular" separado, justamente
+para não haver o estado impossível de uma montagem marcada como particular e
+ainda apontando para uma loja.
+
+O que muda no dinheiro:
+
+| | Serviço de loja | Serviço particular |
+| --- | --- | --- |
+| Quem paga a empresa | a loja | o próprio cliente |
+| Receita da empresa | 8% da nota + assistência | **o valor cheio** |
+| Assistência | conforme o cadastro da loja | não se aplica (gravada como 0) |
+| Comissão do montador | igual | igual |
+
+Somar os dois casos com a mesma regra faria um particular de R$ 400 entrar no
+financeiro como R$ 32. A conta está em `receitaDaEmpresa`
+(`lib/financeiro.ts`), e as duas frentes aparecem lado a lado no financeiro do
+admin, no bloco "Loja x particular". As telas de financeiro (admin e montador)
+e a lista de montagens têm um filtro para ver só uma das duas.
+
+Montagem particular não é enviada ao CentralSync — não há loja do outro lado
+para receber a confirmação.
+
 ## Integração com o CentralSync (loja Central Móveis)
 
 O CentralSync é o sistema da loja. A ligação entre os dois é de mão dupla:
@@ -265,6 +326,11 @@ preenchido.
 - `lib/limite.ts` — limite de tentativas de login e de chamadas à API.
 - `lib/mapas.ts` — links de Google Maps/Waze de uma parada e a montagem da
   rota com várias paradas.
+- `lib/servico.ts` — a distinção entre serviço de loja e particular (o que é
+  particular, como filtrar, o que mostrar no lugar do nome da loja).
+- `lib/url.ts` — o endereço público da instalação, usado para montar os links
+  de avaliação e de agendamento.
+- `app/agendar/` — a página pública onde o cliente pede o agendamento.
 - `app/admin/` — todas as telas do painel do administrador (inclusive
   `app/admin/rota`, a rota do dia).
 - `app/montador/` — todas as telas do painel do montador.

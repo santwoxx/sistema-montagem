@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   emCentavos,
   PERCENTUAL_EMPRESA,
+  receitaDaEmpresa,
   somarDinheiro,
+  somarReceitaDaEmpresa,
   somarValorDevidoPelaLoja,
   valorDevidoPelaLoja,
 } from "@/lib/financeiro";
@@ -57,5 +59,37 @@ describe("regras de dinheiro", () => {
       { valorServico: 99.99, valorAssistencia: null },
     ]);
     expect(total).toBe(emCentavos(total));
+  });
+});
+
+describe("receita de serviço particular", () => {
+  it("fica com a nota inteira quando não há loja", () => {
+    // Sem loja não existe acerto de 8%: quem paga é o cliente, direto.
+    expect(receitaDaEmpresa({ valorServico: 400, lojaId: null })).toBe(400);
+  });
+
+  it("continua cobrando só o acerto quando há loja", () => {
+    expect(
+      receitaDaEmpresa({ valorServico: 1000, valorAssistencia: 20, lojaId: "loja-1" })
+    ).toBe(100);
+  });
+
+  it("soma os dois tipos com a regra de cada um", () => {
+    // 8% de 1000 = 80, mais o particular cheio de 400.
+    expect(
+      somarReceitaDaEmpresa([
+        { valorServico: 1000, lojaId: "loja-1" },
+        { valorServico: 400, lojaId: null },
+      ])
+    ).toBe(480);
+  });
+
+  it("não confunde assistência com receita no particular", () => {
+    // Um particular não deveria ter assistência gravada (a ação zera), mas
+    // se tiver, ela não pode ser somada por fora do valor: o cliente pagou
+    // a nota, e só.
+    expect(
+      receitaDaEmpresa({ valorServico: 400, valorAssistencia: 50, lojaId: null })
+    ).toBe(400);
   });
 });

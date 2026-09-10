@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { Badge, Button, Card, Field, Input, PageHeader, Select, StatCard, Vazio } from "@/components/ui";
-import { emCentavos, somarDinheiro, somarValorDevidoPelaLoja } from "@/lib/financeiro";
+import { emCentavos, somarDinheiro, somarReceitaDaEmpresa } from "@/lib/financeiro";
 import { formatarData, formatarMoeda } from "@/lib/format";
 import { intervaloDoMes, mesAtual } from "@/lib/datas";
 import type { Prisma } from "@prisma/client";
+import { ehParticular, filtroDeOrigem, lerOrigem, nomeDaOrigem, ORIGENS, quemPaga } from "@/lib/servico";
 
 export default async function FinanceiroPage({
   searchParams,
@@ -14,12 +15,14 @@ export default async function FinanceiroPage({
     lojaId?: string;
     montadorId?: string;
     base?: string;
+    origem?: string;
   }>;
 }) {
   const params = await searchParams;
   const mes = params.mes ?? mesAtual();
   const lojaId = params.lojaId ?? "";
   const montadorId = params.montadorId ?? "";
+  const origem = lerOrigem(params.origem);
 
   // Qual data define "o mês" de uma montagem. Esta tela sempre contou pela
   // data de cadastro e a do montador sempre contou pela data de conclusão --
@@ -44,7 +47,10 @@ export default async function FinanceiroPage({
     // o próprio filtro de intervalo já deixa essas montagens de fora.
     [campoData]: { gte: inicio, lt: fim },
   };
+  // Escolher uma loja já implica "serviço de loja", então o filtro de
+  // origem só entra quando nenhuma loja foi escolhida.
   if (lojaId) where.lojaId = lojaId;
+  else Object.assign(where, filtroDeOrigem(origem));
   if (montadorId) where.montadorId = montadorId;
 
   const montagens = await prisma.montagem.findMany({
@@ -55,6 +61,7 @@ export default async function FinanceiroPage({
     select: {
       id: true,
       clienteNome: true,
+      lojaId: true,
       createdAt: true,
       concluidoEm: true,
       valorServico: true,
@@ -71,12 +78,19 @@ export default async function FinanceiroPage({
   // padrão sobre a nota mais a assistência da loja (ver lib/financeiro.ts),
   // enquanto a comissão do montador sai sobre o valor cheio da nota.
   const totalNotas = somarDinheiro(montagens.map((m) => m.valorServico));
-  const receitaEmpresa = somarValorDevidoPelaLoja(montagens);
+  const receitaEmpresa = somarReceitaDaEmpresa(montagens);
   const totalMontador = somarDinheiro(montagens.map((m) => m.valorMontador));
   const totalEmpresa = emCentavos(receitaEmpresa - totalMontador);
-  const totalPendenteLoja = somarValorDevidoPelaLoja(
+  const totalPendenteLoja = somarReceitaDaEmpresa(
     montagens.filter((m) => !m.pagoPelaLoja)
   );
+
+  // A separação que o serviço particular exige: numa montagem de loja a
+  // empresa fica com 8% da nota + assistência, num particular fica com a
+  // nota inteira. Somar os dois num total só esconde exatamente o que
+  // interessa comparar -- quanto rende cada frente.
+  const deLoja = montagens.filter((m) => !ehParticular(m));
+  const particulares = montagens.filter((m) => ehParticular(m));
   const totalPendenteMontador = somarDinheiro(
     montagens.filter((m) => !m.pagoAoMontador).map((m) => m.valorMontador)
   );
@@ -93,7 +107,7 @@ export default async function FinanceiroPage({
       />
 
       <Card className="mb-6">
-        <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
           <Field label="Mês">
             <Input type="month" name="mes" defaultValue={mes} />
           </Field>
@@ -104,6 +118,15 @@ export default async function FinanceiroPage({
             <Select name="base" defaultValue={base}>
               <option value="cadastro">Cadastro da montagem</option>
               <option value="conclusao">Conclusão do serviço</option>
+            </Select>
+          </Field>
+          <Field label="Origem" hint="Serviço de loja ou particular.">
+            <Select name="origem" defaultValue={origem}>
+              {ORIGENS.map((o) => (
+                <option key={o} value={o}>
+                  {o === "todas" ? "Tudo" : o === "loja" ? "Só de loja" : "Só particular"}
+                </option>
+              ))}
             </Select>
           </Field>
           <Field label="Loja">
@@ -144,7 +167,7 @@ export default async function FinanceiroPage({
         <StatCard
           titulo="Receita da empresa"
           valor={formatarMoeda(receitaEmpresa)}
-          sub="8% das notas + assistências"
+          sub="8% das notas de loja + assistências + particulares cheios"
           icone="🏢"
         />
         <StatCard
@@ -160,7 +183,7 @@ export default async function FinanceiroPage({
           icone="📈"
         />
         <StatCard
-          titulo="A receber das lojas"
+          titulo="A receber (lojas e clientes)"
           valor={formatarMoeda(totalPendenteLoja)}
           cor="text-amber-600"
           icone="🏬"
@@ -173,6 +196,39 @@ export default async function FinanceiroPage({
         />
         <StatCard titulo="Montagens no período" valor={String(montagens.length)} icone="📋" />
       </div>
+
+      {/* Só faz sentido comparar as duas frentes quando as duas estão na
+          tela: com o filtro preso numa delas, a comparação seria consigo
+          mesma. */}
+      {origem === "todas" && !lojaId && particulares.length > 0 ? (
+        <>
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
+            Loja x particular
+          </h2>
+          <div className="mb-6 grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
+            <Card>
+              <p className="text-sm font-medium text-slate-500">Serviços de loja</p>
+              <p className="mt-1.5 text-2xl font-bold tracking-tight text-gray-900">
+                {formatarMoeda(somarReceitaDaEmpresa(deLoja))}
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                {deLoja.length} montagem{deLoja.length === 1 ? "" : "s"} ·{" "}
+                {formatarMoeda(somarDinheiro(deLoja.map((m) => m.valorServico)))} em notas
+              </p>
+            </Card>
+            <Card>
+              <p className="text-sm font-medium text-slate-500">Serviços particulares</p>
+              <p className="mt-1.5 text-2xl font-bold tracking-tight text-emerald-600">
+                {formatarMoeda(somarReceitaDaEmpresa(particulares))}
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                {particulares.length} montagem{particulares.length === 1 ? "" : "s"} · cobrado
+                direto do cliente
+              </p>
+            </Card>
+          </div>
+        </>
+      ) : null}
 
       {montagens.length === 0 ? (
         <Vazio>Nenhuma montagem encontrada nesse período.</Vazio>
@@ -189,7 +245,7 @@ export default async function FinanceiroPage({
                 <th className="px-4 py-3">Montador</th>
                 <th className="px-4 py-3 text-right">Valor total</th>
                 <th className="px-4 py-3 text-right">Comissão</th>
-                <th className="px-4 py-3">Loja pagou?</th>
+                <th className="px-4 py-3">Pagou?</th>
                 <th className="px-4 py-3">Montador recebeu?</th>
               </tr>
             </thead>
@@ -204,7 +260,7 @@ export default async function FinanceiroPage({
                       {m.clienteNome}
                     </Link>
                   </td>
-                  <td className="px-4 py-3 text-gray-600">{m.loja.nome}</td>
+                  <td className="px-4 py-3 text-gray-600">{nomeDaOrigem(m.loja)}</td>
                   <td className="px-4 py-3 text-gray-600">{m.montador?.nome ?? "-"}</td>
                   <td className="px-4 py-3 text-right text-gray-900">
                     {formatarMoeda(m.valorServico)}
@@ -220,7 +276,7 @@ export default async function FinanceiroPage({
                           : "bg-amber-100 text-amber-800"
                       }
                     >
-                      {m.pagoPelaLoja ? "Pago" : "Pendente"}
+                      {m.pagoPelaLoja ? "Pago" : `${quemPaga(m)} pendente`}
                     </Badge>
                   </td>
                   <td className="px-4 py-3">

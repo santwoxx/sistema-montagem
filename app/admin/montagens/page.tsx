@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { Badge, Button, Card, Input, LinkButton, PageHeader, Select, Vazio } from "@/components/ui";
 import { formatarData, formatarMoeda, STATUS_COLOR, STATUS_LABEL } from "@/lib/format";
 import type { Prisma, StatusMontagem } from "@prisma/client";
+import { nomeDaOrigem, VALOR_PARTICULAR_FORM } from "@/lib/servico";
 
 export default async function MontagensPage({
   searchParams,
@@ -25,7 +26,10 @@ export default async function MontagensPage({
 
   const where: Prisma.MontagemWhereInput = {};
   if (status) where.status = status as StatusMontagem;
-  if (lojaId) where.lojaId = lojaId;
+  // O mesmo valor reservado do formulário de montagem: aqui ele filtra as
+  // montagens sem loja, ou seja, os serviços particulares.
+  if (lojaId === VALOR_PARTICULAR_FORM) where.lojaId = null;
+  else if (lojaId) where.lojaId = lojaId;
   if (montadorId) where.montadorId = montadorId === "nenhum" ? null : montadorId;
   // A lista corta nas 100 mais recentes: sem uma busca, uma montagem antiga
   // só era encontrada garimpando os filtros de loja/montador um a um.
@@ -89,6 +93,7 @@ export default async function MontagensPage({
           </Select>
           <Select name="lojaId" defaultValue={lojaId ?? ""}>
             <option value="">Todas as lojas</option>
+            <option value={VALOR_PARTICULAR_FORM}>Só particulares</option>
             {lojas.map((l) => (
               <option key={l.id} value={l.id}>
                 {l.nome}
@@ -132,7 +137,7 @@ export default async function MontagensPage({
                   <div>
                     <p className="font-semibold text-gray-900">{m.clienteNome}</p>
                     <p className="text-sm text-gray-500">
-                      {m.loja.nome} · {m.feitoPorAdm ? <span className="font-medium text-navy">A própria empresa (ADM)</span> : (m.montador ? m.montador.nome : "Sem montador")}
+                      {nomeDaOrigem(m.loja)} · {m.feitoPorAdm ? <span className="font-medium text-navy">A própria empresa (ADM)</span> : (m.montador ? m.montador.nome : "Sem montador")}
                     </p>
                     <p className="mt-1 text-xs text-gray-400">
                       {formatarData(m.dataAgendada)} · {formatarMoeda(m.valorServico)}

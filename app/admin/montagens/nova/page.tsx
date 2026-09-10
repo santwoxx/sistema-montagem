@@ -11,7 +11,7 @@ export default async function NovaMontagemPage({
 }) {
   const { erro } = await searchParams;
 
-  const [lojas, montadores, comissoes, notasPendentesBrutas] = await Promise.all([
+  const [lojas, montadores, comissoes, notasPendentesBrutas, solicitacoesBrutas] = await Promise.all([
     prisma.loja.findMany({ where: { ativo: true }, orderBy: { nome: "asc" } }),
     prisma.user.findMany({
       where: { role: "MONTADOR", ativo: true },
@@ -21,6 +21,12 @@ export default async function NovaMontagemPage({
     prisma.notaPendente.findMany({
       orderBy: { criadaEm: "asc" },
       include: { montadorSugerido: { select: { nome: true } } },
+    }),
+    // Só o que ainda está na fila: atendido virou montagem, recusado o
+    // admin já resolveu.
+    prisma.solicitacaoAgendamento.findMany({
+      where: { atendidaEm: null, recusadaEm: null },
+      orderBy: { criadaEm: "asc" },
     }),
   ]);
 
@@ -40,6 +46,20 @@ export default async function NovaMontagemPage({
     montadorSugeridoNome: n.montadorSugerido?.nome ?? null,
     lojaNomeSugerida: n.lojaNomeSugerida,
     lojaCnpjSugerido: n.lojaCnpjSugerido,
+  }));
+
+  // Datas viram texto aqui porque o formulário é um componente de cliente:
+  // objeto Date não atravessa essa fronteira.
+  const solicitacoes = solicitacoesBrutas.map((s) => ({
+    id: s.id,
+    clienteNome: s.clienteNome,
+    clienteTelefone: s.clienteTelefone,
+    clienteEndereco: s.clienteEndereco,
+    produto: s.produto,
+    observacoes: s.observacoes,
+    dataPreferida: s.dataPreferida ? s.dataPreferida.toISOString() : null,
+    periodo: s.periodo,
+    criadaEm: s.criadaEm.toISOString(),
   }));
 
   return (
@@ -63,6 +83,7 @@ export default async function NovaMontagemPage({
           montadores={montadores}
           comissoes={comissoes}
           notasPendentes={notasPendentes}
+          solicitacoes={solicitacoes}
         />
       </Card>
     </div>

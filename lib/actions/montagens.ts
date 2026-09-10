@@ -20,6 +20,7 @@ import {
   podeEnviarAoCentralSync,
 } from "@/lib/centralsync";
 import { instanteLocal } from "@/lib/datas";
+import { lojaIdDoFormulario, nomeDaOrigem } from "@/lib/servico";
 import {
   OrigemEnvioSchema,
   STATUS_PERMITIDOS_MONTADOR,
@@ -116,7 +117,13 @@ export async function criarMontagemAction(formData: FormData) {
   await requireAdmin();
 
   const notaPendenteId = String(formData.get("notaPendenteId") || "").trim();
-  const lojaId = String(formData.get("lojaId") || "");
+  const solicitacaoId = String(formData.get("solicitacaoId") || "").trim();
+  // "" (nada escolhido) e "PARTICULAR" viram null: montagem sem loja é o
+  // serviço particular. A validação de "escolheu alguma coisa" é feita no
+  // valor bruto logo abaixo, para o formulário enviado vazio continuar
+  // sendo recusado.
+  const lojaIdBruto = String(formData.get("lojaId") || "").trim();
+  const lojaId = lojaIdDoFormulario(lojaIdBruto);
   const montadorIdBruto = String(formData.get("montadorId") || "");
   const feitoPorAdm = montadorIdBruto === "ADM";
   const montadorId = montadorIdBruto && montadorIdBruto !== "ADM" ? montadorIdBruto : null;
@@ -130,14 +137,19 @@ export async function criarMontagemAction(formData: FormData) {
   const notaUrl = String(formData.get("notaUrl") || "").trim();
 
   const valorServico = arredondar(paraNumero(formData.get("valorServico")));
-  const percentualAssistencia = paraPercentual(formData.get("percentualAssistencia"));
+  // Sem loja não há de quem cobrar assistência -- ela é o que a empresa
+  // cobra da loja. Zerar aqui, e não só na tela, impede que um valor
+  // digitado antes de trocar para "particular" seja gravado assim mesmo.
+  const percentualAssistencia = lojaId
+    ? paraPercentual(formData.get("percentualAssistencia"))
+    : 0;
   const percentualMontador = paraPercentual(formData.get("percentualMontador"));
   const dataAgendada = paraData(formData.get("dataAgendada"));
 
-  if (!lojaId || !clienteNome || !clienteEndereco || !descricaoServico || valorServico <= 0) {
+  if (!lojaIdBruto || !clienteNome || !clienteEndereco || !descricaoServico || valorServico <= 0) {
     redirect(
       `/admin/montagens/nova?erro=${encodeURIComponent(
-        "Preencha loja, cliente, endereço, serviço e um valor válido."
+        "Preencha loja (ou marque serviço particular), cliente, endereço, serviço e um valor válido."
       )}`
     );
   }
@@ -193,6 +205,19 @@ export async function criarMontagemAction(formData: FormData) {
     await prisma.notaPendente.delete({ where: { id: notaPendenteId } }).catch(() => {});
   }
 
+  // O pedido do link público não é apagado, só marcado como atendido: ele é
+  // o que o cliente escreveu, e vale como histórico do que foi combinado.
+  // `updateMany` com `atendidaEm: null` no filtro para dois cliques no
+  // mesmo pedido não reescreverem a montagem à qual ele já está ligado.
+  if (solicitacaoId) {
+    await prisma.solicitacaoAgendamento
+      .updateMany({
+        where: { id: solicitacaoId, atendidaEm: null },
+        data: { atendidaEm: new Date(), montagemId: montagem.id },
+      })
+      .catch(() => {});
+  }
+
   revalidarMontagem(montagem.id);
   redirect(
     `/admin/montagens/${montagem.id}?sucesso=${encodeURIComponent(
@@ -204,7 +229,8 @@ export async function criarMontagemAction(formData: FormData) {
 export async function atualizarMontagemAction(id: string, formData: FormData) {
   await requireAdmin();
 
-  const lojaId = String(formData.get("lojaId") || "");
+  const lojaIdBruto = String(formData.get("lojaId") || "").trim();
+  const lojaId = lojaIdDoFormulario(lojaIdBruto);
   const montadorIdBruto = String(formData.get("montadorId") || "");
   const feitoPorAdm = montadorIdBruto === "ADM";
   const montadorId = montadorIdBruto && montadorIdBruto !== "ADM" ? montadorIdBruto : null;
@@ -232,14 +258,16 @@ export async function atualizarMontagemAction(id: string, formData: FormData) {
   const status = statusAnalise.data;
 
   const valorServico = arredondar(paraNumero(formData.get("valorServico")));
-  const percentualAssistencia = paraPercentual(formData.get("percentualAssistencia"));
+  const percentualAssistencia = lojaId
+    ? paraPercentual(formData.get("percentualAssistencia"))
+    : 0;
   const percentualMontador = paraPercentual(formData.get("percentualMontador"));
   const dataAgendada = paraData(formData.get("dataAgendada"));
 
-  if (!lojaId || !clienteNome || !clienteEndereco || !descricaoServico || valorServico <= 0) {
+  if (!lojaIdBruto || !clienteNome || !clienteEndereco || !descricaoServico || valorServico <= 0) {
     redirect(
       `/admin/montagens/${id}?erro=${encodeURIComponent(
-        "Preencha loja, cliente, endereço, serviço e um valor válido."
+        "Preencha loja (ou marque serviço particular), cliente, endereço, serviço e um valor válido."
       )}`
     );
   }
@@ -911,7 +939,7 @@ export async function registrarOcorrenciaAction(
   const linhasMensagem = [
     "🚨 *Problema na montagem*",
     "",
-    `Loja: ${montagem.loja.nome}`,
+    `Loja: ${nomeDaOrigem(montagem.loja)}`,
     `Cliente: ${montagem.clienteNome}`,
     montagem.numeroPedido ? `Pedido: ${montagem.numeroPedido}` : null,
     `Produto/serviço: ${montagem.descricaoServico}`,
@@ -922,6 +950,18 @@ export async function registrarOcorrenciaAction(
     fotoUrl ? `Foto: ${fotoUrl}` : null,
   ].filter((linha): linha is string => linha !== null);
   const mensagem = linhasMensagem.join("\n");
+
+  // Serviço particular não tem loja para avisar: quem contratou é o próprio
+  // cliente, que já está na tela da montagem com botão de WhatsApp. A
+  // ocorrência fica registrada do mesmo jeito.
+  if (!montagem.loja) {
+    return {
+      ok: true,
+      url: null,
+      aviso:
+        "Ocorrência registrada. Este é um serviço particular, então não há loja para avisar — fale direto com o cliente.",
+    };
+  }
 
   if (!montagem.loja.telefone) {
     return {

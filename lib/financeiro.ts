@@ -32,6 +32,13 @@ export function emCentavos(valor: number) {
 
 type ValoresMontagem = { valorServico: number; valorAssistencia?: number | null };
 
+// `lojaId` obrigatório de propósito: quem calcula receita precisa ter
+// selecionado a coluna. Se fosse opcional, uma consulta que esquecesse o
+// `lojaId: true` no `select` passaria a tratar toda montagem como
+// particular -- e o erro apareceria como número inflado no financeiro, não
+// como erro de compilação.
+type ValoresComOrigem = ValoresMontagem & { lojaId: string | null };
+
 /** O que a loja deve à empresa por uma montagem: acerto padrão + assistência. */
 export function valorDevidoPelaLoja(montagem: ValoresMontagem) {
   return emCentavos(
@@ -39,11 +46,31 @@ export function valorDevidoPelaLoja(montagem: ValoresMontagem) {
   );
 }
 
+/**
+ * Quanto a empresa fatura com uma montagem, antes da comissão do montador.
+ *
+ * Num serviço de loja a empresa fica só com o acerto (8% da nota) mais a
+ * assistência -- o resto da nota é da loja. Num serviço particular não
+ * existe loja para dividir: o cliente paga a empresa, e a nota inteira é
+ * receita. Somar os dois casos com a mesma conta era o que fazia um
+ * particular de R$ 400 entrar no financeiro como R$ 32.
+ */
+export function receitaDaEmpresa(montagem: ValoresComOrigem) {
+  return montagem.lojaId === null
+    ? emCentavos(montagem.valorServico)
+    : valorDevidoPelaLoja(montagem);
+}
+
 /** Mesma conta, mas somando uma lista de montagens. */
 export function somarValorDevidoPelaLoja(montagens: ValoresMontagem[]) {
   return emCentavos(
     montagens.reduce((soma, m) => soma + valorDevidoPelaLoja(m), 0)
   );
+}
+
+/** Soma a receita da empresa de uma lista de montagens (loja + particular). */
+export function somarReceitaDaEmpresa(montagens: ValoresComOrigem[]) {
+  return emCentavos(montagens.reduce((soma, m) => soma + receitaDaEmpresa(m), 0));
 }
 
 /** Soma uma lista de valores em dinheiro, fechando o total em centavos. */

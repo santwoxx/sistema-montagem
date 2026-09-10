@@ -4,14 +4,16 @@ import { Badge, Card, Field, Input, PageHeader, Select, StatCard, Vazio } from "
 import { formatarData, formatarMoeda } from "@/lib/format";
 import { intervaloDoMes, mesAtual } from "@/lib/datas";
 import type { Prisma } from "@prisma/client";
+import { filtroDeOrigem, lerOrigem, NOME_PARTICULAR, nomeDaOrigem, ORIGENS } from "@/lib/servico";
 
 export default async function FinanceiroMontadorPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mes?: string; lojaId?: string; base?: string }>;
+  searchParams: Promise<{ mes?: string; lojaId?: string; base?: string; origem?: string }>;
 }) {
   const session = await requireMontador();
-  const { mes: mesParam, lojaId, base: baseParam } = await searchParams;
+  const { mes: mesParam, lojaId, base: baseParam, origem: origemParam } = await searchParams;
+  const origem = lerOrigem(origemParam);
   const mes = mesParam ?? mesAtual();
 
   // Mesma escolha que existe no financeiro do admin, para os dois poderem
@@ -21,10 +23,12 @@ export default async function FinanceiroMontadorPage({
   const campoData = base === "cadastro" ? "createdAt" : "concluidoEm";
   const { inicio, fim } = intervaloDoMes(mes);
 
+  // Escolher uma loja no filtro já implica "serviço de loja", então o
+  // filtro de origem só entra quando nenhuma loja foi escolhida.
   const concluidasBase: Prisma.MontagemWhereInput = {
     montadorId: session.sub,
     status: "CONCLUIDO",
-    ...(lojaId ? { lojaId } : {}),
+    ...(lojaId ? { lojaId } : filtroDeOrigem(origem)),
   };
 
   const [
@@ -76,10 +80,13 @@ export default async function FinanceiroMontadorPage({
   ]);
 
   const nomeLoja = new Map(lojas.map((l) => [l.id, l.nome]));
+  // `lojaId` nulo é serviço particular: quem deve a comissão é a empresa,
+  // não uma loja. Agrupa tudo isso numa linha só, com o mesmo rótulo que o
+  // resto do sistema usa.
   const pendentePorLoja = pendentePorLojaBruto
     .map((item) => ({
-      lojaId: item.lojaId,
-      nome: nomeLoja.get(item.lojaId) ?? "Loja",
+      chave: item.lojaId ?? "particular",
+      nome: item.lojaId ? nomeLoja.get(item.lojaId) ?? "Loja" : NOME_PARTICULAR,
       valor: item._sum.valorMontador ?? 0,
     }))
     .filter((item) => item.valor > 0)
@@ -90,7 +97,7 @@ export default async function FinanceiroMontadorPage({
       <PageHeader titulo="Financeiro" descricao="Seus ganhos com as montagens concluídas." />
 
       <Card className="mb-6">
-        <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <Field label="Mês">
             <Input type="month" name="mes" defaultValue={mes} />
           </Field>
@@ -98,6 +105,15 @@ export default async function FinanceiroMontadorPage({
             <Select name="base" defaultValue={base}>
               <option value="conclusao">Conclusão do serviço</option>
               <option value="cadastro">Cadastro da montagem</option>
+            </Select>
+          </Field>
+          <Field label="Origem" hint="Serviço de loja ou particular.">
+            <Select name="origem" defaultValue={origem}>
+              {ORIGENS.map((o) => (
+                <option key={o} value={o}>
+                  {o === "todas" ? "Tudo" : o === "loja" ? "Só de loja" : "Só particular"}
+                </option>
+              ))}
             </Select>
           </Field>
           <Field label="Loja">
@@ -146,7 +162,7 @@ export default async function FinanceiroMontadorPage({
           <p className="mb-3 text-sm font-medium text-gray-500">Quem te deve</p>
           <div className="space-y-2">
             {pendentePorLoja.map((item) => (
-              <div key={item.lojaId} className="flex items-center justify-between text-sm">
+              <div key={item.chave} className="flex items-center justify-between text-sm">
                 <span className="text-gray-700">{item.nome}</span>
                 <span className="font-semibold text-amber-600">{formatarMoeda(item.valor)}</span>
               </div>
@@ -156,7 +172,8 @@ export default async function FinanceiroMontadorPage({
       ) : null}
 
       <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
-        No mês selecionado ({base === "cadastro" ? "por cadastro" : "por conclusão"})
+        No mês selecionado ({base === "cadastro" ? "por cadastro" : "por conclusão"}
+        {lojaId ? "" : origem === "loja" ? " · só de loja" : origem === "particular" ? " · só particular" : ""})
       </h2>
       <div className="mb-8 grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
         <StatCard
@@ -180,7 +197,7 @@ export default async function FinanceiroMontadorPage({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <p className="font-semibold text-gray-900">{m.clienteNome}</p>
-                  <p className="text-sm text-gray-500">{m.loja.nome}</p>
+                  <p className="text-sm text-gray-500">{nomeDaOrigem(m.loja)}</p>
                   <p className="text-xs text-gray-400">
                     Concluída em {formatarData(m.concluidoEm)}
                   </p>

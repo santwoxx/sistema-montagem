@@ -28,6 +28,7 @@ import {
   STATUS_COLOR,
   STATUS_LABEL,
 } from "@/lib/format";
+import { nomeDaOrigem } from "@/lib/servico";
 
 export default async function MontagemDetalheMontadorPage({
   params,
@@ -65,7 +66,7 @@ export default async function MontagemDetalheMontadorPage({
 
       <PageHeader
         titulo={montagem.clienteNome}
-        descricao={montagem.loja.nome}
+        descricao={nomeDaOrigem(montagem.loja)}
         acoes={
           <Badge className={STATUS_COLOR[montagem.status]}>
             {STATUS_LABEL[montagem.status]}
