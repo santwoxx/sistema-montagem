@@ -103,6 +103,11 @@ export default async function AdminDashboardPage({
         // ir (e para quem ligar) era o passo a mais de sempre.
         clienteEndereco: true,
         clienteTelefone: true,
+        // O que vai ser montado e por quanto. Sem isso o cartão dizia só
+        // para onde ir, e decidir a ordem do dia (ou ver se a montagem
+        // compensa a viagem) exigia abrir uma por uma.
+        descricaoServico: true,
+        valorServico: true,
         dataAgendada: true,
         status: true,
         loja: { select: { nome: true } },
@@ -424,7 +429,23 @@ export default async function AdminDashboardPage({
                   </Badge>
                 </div>
 
-                <p className="mt-2 text-sm text-slate-900">{m.clienteEndereco}</p>
+                <div className="mt-3 rounded-xl border border-slate-200/80 bg-slate-50 p-3">
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Produto / serviço
+                    </p>
+                    <p className="text-sm font-semibold text-emerald-700">
+                      {formatarMoeda(m.valorServico)}
+                    </p>
+                  </div>
+                  {/* A descrição vem da nota (os produtos separados por ";")
+                      ou digitada à mão, e pode ter mais de uma linha. */}
+                  <p className="mt-1 whitespace-pre-line text-sm text-slate-800">
+                    {m.descricaoServico}
+                  </p>
+                </div>
+
+                <p className="mt-3 text-sm text-slate-900">{m.clienteEndereco}</p>
 
                 <AcoesCliente
                   endereco={m.clienteEndereco}
