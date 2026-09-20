@@ -13,24 +13,140 @@ export function linkMapa(endereco: string) {
 }
 
 /**
- * Limpa o endereço antes de mandá-lo para a busca do Waze.
+ * Cidade e estado assumidos quando o endereço não diz em que cidade fica.
+ *
+ * O Google Maps chuta a cidade pela localização de quem clica; o Waze, não:
+ * sem cidade ele procura o nome da rua no país inteiro e volta sem resultado
+ * (ou com a rua de mesmo nome em outro estado). Como a maioria dos endereços
+ * chega da nota fiscal só com "rua, número, bairro", é aqui que a cidade
+ * entra.
+ *
+ * Só é usada quando o endereço não traz nem UF nem o nome desta cidade, e
+ * quando ele é curto o bastante para ser só rua/número/bairro (ver
+ * `comCidadePadrao`). Para atender outra cidade, defina
+ * `NEXT_PUBLIC_CIDADE_PADRAO`; para desligar de vez, defina como vazio.
+ */
+const CIDADE_PADRAO = (process.env.NEXT_PUBLIC_CIDADE_PADRAO ?? "Itabuna, BA").trim();
+
+const UFS =
+  "AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO";
+
+const SO_A_UF = new RegExp(`^(?:${UFS})$`, "i");
+
+/**
+ * Onde o endereço acaba e começa a observação de entrega.
+ *
+ * O campo é uma linha de texto livre, então vem com o que a loja anotou
+ * junto: "COD.GILVAN RODRIGUES" (o código do pedido na loja), "prox. ao
+ * mercado", "falar com a vizinha". O Google engole isso; o Waze trata cada
+ * palavra como parte do endereço e não acha nada.
+ *
+ * As bordas são `(?<!\p{L})`/`(?!\p{L})` em vez de `\b` de propósito: `\b`
+ * em JavaScript só conhece letras ASCII, então "Telêmaco" casaria com "tel"
+ * e a rua inteira seria cortada.
+ */
+const MARCADOR_REFERENCIA =
+  /(?<!\p{L})(?:c[oó]d(?:igo)?|ref(?:er[eê]ncia)?|obs|ponto\s+de\s+refer\p{L}*|pr[oó]x(?:imo)?|perto\s+d[eo]|ao\s+lado|em\s+frente|defronte|fundos|falar\s+com|contato|tel(?:efone)?|fone|recado|whats\p{L}*)(?!\p{L})/iu;
+
+/** Tipos de via: "Rua 2" é nome de rua, não a casa número 2. */
+const TIPO_DE_VIA =
+  /^(?:r|rua|av|avenida|trav|travessa|al|alameda|pra[cç]a|estrada|rod|rodovia|via|beco|ladeira|largo|conj|conjunto|loteamento|lot|quadra|qd)\.?$/i;
+
+/** "25 de Dezembro", "7 de Setembro": o número faz parte do nome da via. */
+const PARTICULA = /^(?:de|do|da|dos|das)$/i;
+
+/** "nº 145", "n. 145": o marcador some e o número fica. */
+const MARCADOR_DE_NUMERO = /^n[ºo°]?\.?$/i;
+
+function cortarNaReferencia(trecho: string) {
+  const achado = trecho.match(MARCADOR_REFERENCIA);
+  return achado?.index === undefined ? trecho : trecho.slice(0, achado.index);
+}
+
+/**
+ * Separa rua, número e bairro com vírgula quando eles vêm grudados.
+ *
+ * "RUA 25 DE DEZEMBRO 145 SAO CAETANO" é uma linha só para o Waze, que tenta
+ * casar tudo como nome de rua. Com as vírgulas no lugar
+ * ("RUA 25 DE DEZEMBRO, 145, SAO CAETANO") ele reconhece o número da casa.
+ */
+function separarNumeroDaRua(trecho: string) {
+  const tokens = trecho.split(" ").filter(Boolean);
+
+  for (let i = 1; i < tokens.length; i++) {
+    if (!/^\d{1,5}[a-z]?$/i.test(tokens[i]!)) continue;
+    // Nome da via, não número da casa: "Rua 25 de Dezembro", "Rua 2".
+    if (PARTICULA.test(tokens[i + 1] ?? "")) continue;
+    if (i === 1 && TIPO_DE_VIA.test(tokens[0]!)) continue;
+    // "BR 101 km 20": os dois números são da rodovia, não de uma casa.
+    if (/^km\.?$/i.test(tokens[i + 1] ?? "")) continue;
+    if (/^km\.?$/i.test(tokens[i - 1]!)) continue;
+
+    const inicio = MARCADOR_DE_NUMERO.test(tokens[i - 1]!) ? i - 1 : i;
+    const antes = tokens.slice(0, inicio).join(" ");
+    if (!antes) return trecho;
+
+    return [antes, tokens[i]!, tokens.slice(i + 1).join(" ")]
+      .filter(Boolean)
+      .join(", ");
+  }
+
+  return trecho;
+}
+
+function semAcentos(texto: string) {
+  return texto
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
+}
+
+/**
+ * Acrescenta a cidade quando o endereço claramente não tem nenhuma.
+ *
+ * Conservador de propósito: mandar o montador para a rua certa na cidade
+ * errada é pior do que a busca não achar nada. Só completa quando não há UF
+ * no fim, o nome da cidade padrão não aparece em lugar nenhum, e sobraram no
+ * máximo três pedaços — que é o formato de quem só tem rua, número e bairro.
+ * "Rua A, 12, Centro, Ilhéus" tem quatro e fica como está.
+ */
+function comCidadePadrao(partes: string[]) {
+  const endereco = partes.join(", ");
+  if (!CIDADE_PADRAO) return endereco;
+  if (partes.length > 3) return endereco;
+  if (SO_A_UF.test(partes[partes.length - 1] ?? "")) return endereco;
+
+  const texto = semAcentos(endereco);
+  const jaCitada = semAcentos(CIDADE_PADRAO)
+    .split(",")
+    .map((p) => p.trim())
+    .filter((p) => p.length > 2)
+    .some((p) => texto.includes(p));
+  if (jaCitada) return endereco;
+
+  return `${endereco}, ${CIDADE_PADRAO}`;
+}
+
+/**
+ * Deixa o endereço no formato que a busca do Waze entende.
  *
  * O endereço chega como uma linha só, do jeito que a loja digitou ou que o
  * CentralSync mandou -- e vem com coisas que o Google entende e o Waze não:
  *
  *   Rua José Bonifácio, 364 - Santo Antônio, Itabuna - BA (CEP: 45602-132)
+ *   RUA 25 DE DEZEMBRO 145 SAO CAETANO COD.GILVAN RODRIGUES
  *
- * O buscador do Waze é bem menos tolerante que o do Google: o trecho entre
- * parênteses (CEP, ponto de referência, "casa amarela") derruba a busca, e
- * o app abre sem achar nada -- que é o "clica no Waze e não vai" relatado
- * por quem usa. O hífen separando bairro e cidade também atrapalha; vírgula
- * é o separador que ele espera.
+ * O buscador do Waze é bem menos tolerante que o do Google: complemento
+ * entre parênteses, CEP, código do pedido e ponto de referência derrubam a
+ * busca, e o app abre sem achar nada -- que é o "clica no Waze e não vai"
+ * relatado por quem usa. Rua e número grudados e a falta da cidade têm o
+ * mesmo efeito.
  *
  * Google Maps continua recebendo o endereço inteiro (linkMapa), porque lá o
  * texto extra ajuda em vez de atrapalhar.
  */
 export function enderecoParaNavegacao(endereco: string) {
-  const limpo = endereco
+  const semComplemento = endereco
     // Fora tudo entre parênteses: é sempre complemento ou referência.
     .replace(/\([^)]*\)?/g, " ")
     // CEP solto (com ou sem o rótulo), que sobra quando não vem entre
@@ -41,15 +157,31 @@ export function enderecoParaNavegacao(endereco: string) {
     // Hífen usado como separador ("bairro - cidade", "Itabuna - BA") vira
     // vírgula. O hífen dentro de palavra (Cidade-Nova) fica quieto.
     .replace(/\s+-\s+/g, ", ")
-    .replace(/\s+/g, " ")
-    // Sobras de pontuação: vírgulas seguidas e pontuação nas pontas.
-    .replace(/\s*,\s*(?=,)/g, "")
-    .replace(/^[\s,.-]+|[\s,.-]+$/g, "")
-    .trim();
+    .replace(/\s+/g, " ");
+
+  // Corta a observação pedaço a pedaço, não da primeira ocorrência até o
+  // fim: em "Rua A, 12, prox. ao mercado, Itabuna - BA" a cidade vem depois
+  // da referência, e cortar o resto jogaria fora justamente o que o Waze
+  // mais precisa.
+  const partes = semComplemento
+    .split(",")
+    .map((parte) => cortarNaReferencia(parte).replace(/^[\s.;-]+|[\s.;-]+$/g, "").trim())
+    .filter(Boolean);
 
   // Endereço que era só um complemento entre parênteses ficaria vazio aqui
   // -- melhor mandar o original e deixar o Waze tentar do que abrir vazio.
-  return limpo || endereco.trim();
+  if (partes.length === 0) return endereco.trim();
+
+  // Re-separado depois do número entrar porque é a contagem de pedaços que
+  // diz se falta cidade: "RUA X 145 BAIRRO" chega aqui como um pedaço só e
+  // sai como três.
+  const comNumero = [separarNumeroDaRua(partes[0]!), ...partes.slice(1)]
+    .join(", ")
+    .split(",")
+    .map((parte) => parte.trim())
+    .filter(Boolean);
+
+  return comCidadePadrao(comNumero).replace(/\s+/g, " ").trim();
 }
 
 export function linkWaze(endereco: string) {

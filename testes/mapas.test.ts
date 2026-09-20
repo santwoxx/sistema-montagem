@@ -91,6 +91,52 @@ describe("link do Waze", () => {
     );
   });
 
+  it("corta o código do pedido colado no fim do endereço", () => {
+    // O endereço que vem da loja/CentralSync carrega o código da entrega
+    // ("COD.FULANO"). Para o Waze isso é mais um termo do endereço, e a
+    // busca volta vazia.
+    expect(
+      enderecoParaNavegacao("RUA 25 DE DEZEMBRO 145 SAO CAETANO COD.GILVAN RODRIGUES")
+    ).toBe("RUA 25 DE DEZEMBRO, 145, SAO CAETANO, Itabuna, BA");
+  });
+
+  it("corta só o pedaço da referência, preservando a cidade que vem depois", () => {
+    expect(enderecoParaNavegacao("Rua A, 12, prox. ao mercado, Ilhéus - BA")).toBe(
+      "Rua A, 12, Ilhéus, BA"
+    );
+  });
+
+  it("não confunde nome de rua com observação", () => {
+    // "tel", "cod" e "ref" dentro de palavra ficam quietos -- em JavaScript
+    // o \b não conhece letra acentuada, e "Telêmaco" viraria "".
+    expect(enderecoParaNavegacao("Rua Telêmaco Borba, 88, Centro, Curitiba, PR")).toBe(
+      "Rua Telêmaco Borba, 88, Centro, Curitiba, PR"
+    );
+  });
+
+  it("separa rua, número e bairro grudados numa linha só", () => {
+    expect(enderecoParaNavegacao("Avenida Sete de Setembro 1200 Centro, Ilhéus, BA")).toBe(
+      "Avenida Sete de Setembro, 1200, Centro, Ilhéus, BA"
+    );
+    // Número que faz parte do nome da via não vira número de casa.
+    expect(enderecoParaNavegacao("Rua 2, Centro, Itabuna, BA")).toBe(
+      "Rua 2, Centro, Itabuna, BA"
+    );
+  });
+
+  it("completa a cidade quando o endereço só tem rua, número e bairro", () => {
+    expect(enderecoParaNavegacao("Rua A, 12, Centro")).toBe("Rua A, 12, Centro, Itabuna, BA");
+  });
+
+  it("não completa a cidade quando o endereço já diz onde fica", () => {
+    // Rua certa na cidade errada é pior que busca vazia: com UF no fim, com
+    // a própria cidade escrita, ou com pedaços demais (que já indicam
+    // cidade), o endereço vai como está.
+    expect(enderecoParaNavegacao("Rua A, 12, Centro, SP")).toBe("Rua A, 12, Centro, SP");
+    expect(enderecoParaNavegacao("Rua A, 12, Itabuna")).toBe("Rua A, 12, Itabuna");
+    expect(enderecoParaNavegacao("Rua A, 12, Centro, Ilhéus")).toBe("Rua A, 12, Centro, Ilhéus");
+  });
+
   it("devolve o original quando não sobraria nada para buscar", () => {
     // Endereço que é só uma referência: melhor mandar assim e deixar o Waze
     // tentar do que abrir o aplicativo com a busca vazia.

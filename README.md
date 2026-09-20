@@ -318,6 +318,30 @@ API](https://developers.google.com/maps/documentation/embed/get-api-key). O
 mapa embutido só aparece quando a chave existe **e** o ponto de partida está
 preenchido.
 
+## Cidade padrão dos links do Waze (opcional)
+
+O endereço do cliente é uma linha de texto livre, e quase sempre chega da
+nota fiscal sem a cidade: `RUA 25 DE DEZEMBRO 145 SAO CAETANO`. O Google Maps
+completa isso sozinho pela localização de quem clica; o Waze, não — ele
+procura o nome da rua no país inteiro e o aplicativo abre sem achar nada.
+
+Por isso o botão **Waze** completa o endereço com uma cidade padrão, que vem
+configurada como `Itabuna, BA`. Para mudar, cadastre
+`NEXT_PUBLIC_CIDADE_PADRAO` nas "Environment Variables" (ex:
+`Ilhéus, BA`); para desligar, deixe a variável vazia.
+
+A cidade só é acrescentada quando o endereço claramente não tem nenhuma: se
+ele termina com a sigla de um estado, se já traz o nome da cidade padrão, ou
+se tem mais de três partes separadas por vírgula (o que já indica cidade), o
+endereço vai como está. Mandar o montador para a rua certa na cidade errada é
+pior do que a busca não achar nada.
+
+O mesmo botão também limpa, antes de mandar para o Waze, o que só atrapalha a
+busca dele: CEP, complemento entre parênteses, código do pedido
+(`COD.FULANO`), ponto de referência (`prox. ao mercado`) e telefone. O link
+do Google Maps continua recebendo o endereço inteiro, porque lá esse texto a
+mais ajuda a achar o ponto certo.
+
 ## Estrutura do projeto (para referência técnica)
 
 - `prisma/schema.prisma` — modelo do banco de dados (usuários, lojas,
