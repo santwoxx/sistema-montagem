@@ -10,7 +10,7 @@ import {
   concluirComProvaAction,
   reporNaFilaCentralSyncAction,
 } from "@/lib/actions/montagens";
-import { pareceIdDoCentralSync, podeEnviarAoCentralSync } from "@/lib/centralsync";
+import { lancadaAMaoNaLojaDoCentralSync, podeEnviarAoCentralSync } from "@/lib/centralsync";
 import { AcoesCliente } from "@/components/AcoesCliente";
 import { Alerta, Badge, Button, Card, PageHeader } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -68,12 +68,12 @@ export default async function MontagemDetalhePage({
 
   if (!montagem) notFound();
 
-  // Envio da conclusão para a Central Móveis. Dois casos, e o segundo é o que
-  // faltava: o pedido que chegou pela integração ("del-...") e a montagem
-  // lançada à mão numa loja marcada como atendida pelo CentralSync -- essa
-  // não tem entrega do outro lado, então vai como montagem avulsa.
-  const veioDaIntegracao = pareceIdDoCentralSync(montagem.numeroPedido);
+  // Envio da conclusão para a Central Móveis: só o que chegou pela
+  // integração -- o pedido ("del-...") e a desmontagem/assistência que veio
+  // junto. Montagem lançada à mão é particular e não vai (ver
+  // podeEnviarAoCentralSync).
   const vaiParaCentralSync = podeEnviarAoCentralSync(montagem);
+  const particularNaLojaDoCentralSync = lancadaAMaoNaLojaDoCentralSync(montagem);
   // Dentro do bloco do CentralSync a loja sempre existe: só se chega lá por
   // pedido da integração ou por `loja.integraCentralSync`, e um serviço
   // particular não tem loja nenhuma. O fallback existe só porque o
@@ -245,9 +245,7 @@ export default async function MontagemDetalhePage({
           <p className="text-sm font-medium text-slate-500">
             {rotuloServico
               ? `${rotuloServico} · enviar comprovante para a ${nomeLojaEnvio}`
-              : veioDaIntegracao
-                ? "Integração CentralSync"
-                : `Enviar para a ${nomeLojaEnvio}`}
+              : "Integração CentralSync"}
           </p>
           {rotuloServico ? (
             <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-900">
@@ -271,11 +269,7 @@ export default async function MontagemDetalhePage({
               </p>
               <form action={confirmarEnvioCentralSyncAction.bind(null, montagem.id, "montagem")}>
                 <SubmitButton pendingText="Reenviando…">
-                  {rotuloServico
-                    ? "Reenviar comprovante"
-                    : veioDaIntegracao
-                      ? "Reenviar ao CentralSync"
-                      : `Reenviar para a ${nomeLojaEnvio}`}
+                  {rotuloServico ? "Reenviar comprovante" : "Reenviar ao CentralSync"}
                 </SubmitButton>
               </form>
             </>
@@ -291,22 +285,6 @@ export default async function MontagemDetalhePage({
                 . Confira a foto e as assinaturas acima — o CentralSync só recebe
                 a conclusão quando você enviar daqui.
               </p>
-              {/* Lançada à mão: não existe entrega correspondente do outro
-                  lado, e a caixa "Montagens Feitas" de lá só consegue mostrar
-                  o que vier no aviso. Por isso a tela avisa o que a loja vai
-                  ver -- e o que ela NÃO vai conseguir fazer por lá. */}
-              {veioDaIntegracao ? null : (
-                <p className="mb-3 rounded-lg bg-blue-50 p-3 text-sm text-blue-900">
-                  Lançada à mão: este serviço não existe como entrega no
-                  CentralSync. A foto e as assinaturas chegam na caixa
-                  &ldquo;Montagens Feitas&rdquo; (aba Entregas &amp; Assinaturas)
-                  identificadas por
-                  {montagem.numeroPedido ? ` pedido ${montagem.numeroPedido} e` : ""}{" "}
-                  {montagem.clienteNome}, para a loja conferir. Como não há
-                  entrega correspondente lá, a baixa do pedido é feita por eles
-                  no sistema deles.
-                </p>
-              )}
               <form action={confirmarEnvioCentralSyncAction.bind(null, montagem.id, "montagem")} className="space-y-3">
                 {(!montagem.fotoProdutoUrl || !montagem.assinaturaMontador || !montagem.assinaturaCliente) && (
                   <div>
@@ -322,11 +300,7 @@ export default async function MontagemDetalhePage({
                   </div>
                 )}
                 <SubmitButton pendingText="Enviando…">
-                  {rotuloServico
-                    ? "Enviar comprovante"
-                    : veioDaIntegracao
-                      ? "Enviar ao CentralSync"
-                      : `Enviar para a ${nomeLojaEnvio}`}
+                  {rotuloServico ? "Enviar comprovante" : "Enviar ao CentralSync"}
                 </SubmitButton>
               </form>
               {/* Removida da fila do painel (botão "Remover da fila" de lá).
@@ -361,11 +335,27 @@ export default async function MontagemDetalhePage({
             <p className="mt-1 text-sm text-slate-500">
               {rotuloServico
                 ? `Assim que este serviço for concluído (foto + assinaturas), o botão para enviar o comprovante para a ${nomeLojaEnvio} aparece aqui.`
-                : veioDaIntegracao
-                  ? "Esse pedido veio do CentralSync. Quando quem for montar concluir (foto + assinaturas), a montagem aparece aqui e no painel geral com o botão para você conferir e enviar a conclusão para a loja."
-                  : `Assim que esta montagem for concluída (foto + assinaturas), o botão para enviar o comprovante para a ${nomeLojaEnvio} aparece aqui.`}
+                : "Esse pedido veio do CentralSync. Quando quem for montar concluir (foto + assinaturas), a montagem aparece aqui e no painel geral com o botão para você conferir e enviar a conclusão para a loja."}
             </p>
           )}
+        </Card>
+      ) : particularNaLojaDoCentralSync ? (
+        // A loja escolhida é a do CentralSync, então quem abre a montagem
+        // espera o botão de envio -- que existia até esta regra. Sem esta
+        // explicação, o sumiço do botão parece defeito.
+        <Card className="mb-6">
+          <p className="text-sm font-medium text-slate-500">Central Móveis</p>
+          <p className="mt-1 text-sm text-slate-600">
+            Lançada à mão: é tratada como serviço particular e não vai para a{" "}
+            {nomeLojaEnvio}. Só os pedidos que chegam pela integração do
+            CentralSync voltam para lá.
+          </p>
+          {montagem.notificadoCentralSyncEm ? (
+            <p className="mt-2 text-xs text-slate-400">
+              Ela chegou a ser enviada em{" "}
+              {formatarDataHora(montagem.notificadoCentralSyncEm)}, antes dessa regra.
+            </p>
+          ) : null}
         </Card>
       ) : null}
 

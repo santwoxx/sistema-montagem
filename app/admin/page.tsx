@@ -5,7 +5,7 @@ import {
   dispensarEnvioCentralSyncAction,
   dispensarFilaCentralSyncAction,
 } from "@/lib/actions/montagens";
-import { PREFIXO_PEDIDO_CENTRALSYNC } from "@/lib/centralsync";
+import { PREFIXO_PEDIDO_CENTRALSYNC, PREFIXOS_SERVICO_SEM_MONTAGEM } from "@/lib/centralsync";
 import { emCentavos, valorDevidoPelaLoja } from "@/lib/financeiro";
 import { formatarData, formatarDataHora, formatarMoeda, STATUS_COLOR, STATUS_LABEL } from "@/lib/format";
 import { intervaloDoMes, mesAtual } from "@/lib/datas";
@@ -142,11 +142,15 @@ export default async function AdminDashboardPage({
           // Pedido vindo da integração. "insensitive" porque o número fica
           // num campo que o admin pode reescrever.
           { numeroPedido: { startsWith: PREFIXO_PEDIDO_CENTRALSYNC, mode: "insensitive" } },
-          // Qualquer serviço concluído numa loja atendida pelo CentralSync:
-          // montagem lançada à mão, desmontagem e assistência. As três vão
-          // como avulsas e chegam lá rotuladas (ver nomeParaCentralSync) --
-          // por isso desmontagem e assistência não são mais filtradas aqui.
-          { loja: { integraCentralSync: true } },
+          // Desmontagem e assistência que a integração mandou, quando a loja
+          // é a do CentralSync. Vão como avulsas e chegam lá rotuladas (ver
+          // nomeParaCentralSync). Montagem lançada à mão fica de fora mesmo
+          // nessa loja: é serviço particular e não volta para a Central
+          // Móveis.
+          ...PREFIXOS_SERVICO_SEM_MONTAGEM.map((prefixo) => ({
+            numeroPedido: { startsWith: prefixo, mode: "insensitive" as const },
+            loja: { integraCentralSync: true },
+          })),
         ],
       },
       orderBy: { concluidoEm: "asc" },

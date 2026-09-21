@@ -9,10 +9,11 @@
 // async), e estas são só funções utilitárias síncronas.
 export const PREFIXO_PEDIDO_CENTRALSYNC = "del-";
 
-// Prefixo dos ids inventados aqui para as montagens lançadas à mão. Do lado
-// do CentralSync não existe entrega com esse id (ela nunca passou pela
-// integração), então a confirmação chega lá como montagem avulsa: aparece na
-// caixa "Montagens Feitas" com os dados do serviço e o admin de lá decide se
+// Prefixo dos ids inventados aqui para os envios avulsos (hoje, desmontagem
+// e assistência -- montagem lançada à mão não é mais enviada, ver
+// podeEnviarAoCentralSync). Do lado do CentralSync não existe entrega com
+// esse id, então a confirmação chega lá como avulsa: aparece na caixa
+// "Montagens Feitas" com os dados do serviço e o admin de lá decide se
 // vincula a uma entrega ou só arquiva. Precisa ser estável -- é o id do
 // documento do outro lado, e é ele que faz o reenvio sobrescrever o aviso
 // anterior em vez de criar um segundo.
@@ -80,20 +81,40 @@ export function rotuloDoServico(numeroPedido: string | null): string | null {
 
 // Se dá para mandar a conclusão desta montagem para a Central Móveis.
 //
-// Dois caminhos, e o segundo é o que não existia: além do pedido que chegou
-// pela integração ("del-..."), também vale a montagem lançada à mão no
-// painel, desde que a loja dela seja a que o CentralSync atende (marcada em
-// Lojas). Sem isso, uma nota que o Dário digitava na mão ficava sem nenhum
-// botão de envio -- a loja nunca via a foto e as assinaturas.
+// Só o que chegou pela integração volta para lá: o pedido ("del-...") e a
+// desmontagem/assistência que o CentralSync mandou junto ("DESM-"/"ASSIST-",
+// ver PREFIXOS_SERVICO_SEM_MONTAGEM).
+//
+// Montagem lançada à mão NÃO vai, nem quando a loja escolhida é a do
+// CentralSync. Durante um tempo ia, como avulsa -- mas o que é digitado no
+// painel é serviço particular da empresa, fechado por fora da Central
+// Móveis, e mandar o comprovante para lá punha na caixa da loja um serviço
+// que não é dela.
 export function podeEnviarAoCentralSync(montagem: {
   numeroPedido: string | null;
   loja?: { integraCentralSync: boolean } | null;
 }): boolean {
   if (pareceIdDoCentralSync(montagem.numeroPedido)) return true;
-  // Desmontagem e assistência entram aqui junto com as montagens lançadas à
-  // mão: as três vão como avulsas, e o que diz o que cada uma é fica no
-  // rótulo (ver PREFIXOS_SERVICO_SEM_MONTAGEM).
-  return Boolean(montagem.loja?.integraCentralSync);
+  // Desmontagem e assistência vão como avulsas (o que diz o que cada uma é
+  // fica no rótulo), e só para a loja marcada como do CentralSync: um
+  // serviço desses que o admin passou para particular, ou para outra loja,
+  // não tem destinatário do outro lado.
+  if (ehDesmontagemOuAssistencia(montagem.numeroPedido)) {
+    return Boolean(montagem.loja?.integraCentralSync);
+  }
+  return false;
+}
+
+/**
+ * Lançada à mão numa loja do CentralSync: é justamente o caso que a tela
+ * precisa explicar, porque a loja escolhida sugere que o envio existiria e
+ * o botão não aparece.
+ */
+export function lancadaAMaoNaLojaDoCentralSync(montagem: {
+  numeroPedido: string | null;
+  loja?: { integraCentralSync: boolean } | null;
+}): boolean {
+  return Boolean(montagem.loja?.integraCentralSync) && !podeEnviarAoCentralSync(montagem);
 }
 
 // Sob qual id a confirmação é gravada do lado do CentralSync.
@@ -120,11 +141,12 @@ const LIMITE_NOME_CENTRALSYNC = 190;
 // Pedido vindo da integração manda só o nome de quem montou, como sempre --
 // lá a entrega é achada pelo id e a tela já mostra cliente, pedido e itens.
 //
-// A montagem lançada à mão não tem entrega correspondente lá, então a caixa
-// não consegue mostrar nada além do que este campo e o id trouxerem. Por
-// isso aqui vai também o número do pedido e o nome do cliente: sem eles a
-// confirmação chega numa linha que o pessoal da loja não tem como
-// reconhecer, e o comprovante (foto + assinaturas) fica sem dono na tela.
+// O envio avulso (desmontagem, assistência) não tem entrega correspondente
+// lá, então a caixa não consegue mostrar nada além do que este campo e o id
+// trouxerem. Por isso aqui vai também o número do pedido e o nome do
+// cliente: sem eles a confirmação chega numa linha que o pessoal da loja não
+// tem como reconhecer, e o comprovante (foto + assinaturas) fica sem dono na
+// tela.
 export function nomeParaCentralSync(montagem: {
   numeroPedido: string | null;
   clienteNome: string;

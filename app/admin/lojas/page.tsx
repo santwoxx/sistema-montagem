@@ -65,9 +65,10 @@ export default async function LojasPage({
             <span>
               Loja atendida pelo CentralSync
               <span className="block text-xs text-gray-500">
-                Libera o botão de enviar o comprovante da montagem para ela também
-                nas notas lançadas aqui à mão. Os pedidos que chegam pela
-                integração já vão de qualquer jeito.
+                Libera o envio do comprovante de desmontagem e assistência que
+                chegam pela integração. Os pedidos da integração já vão de
+                qualquer jeito, e montagem lançada aqui à mão nunca vai: é
+                serviço particular.
               </span>
             </span>
           </label>
@@ -172,8 +173,9 @@ export default async function LojasPage({
                     <span>
                       Loja atendida pelo CentralSync
                       <span className="block text-xs text-gray-500">
-                        Libera o botão de enviar o comprovante da montagem para ela
-                        também nas notas lançadas aqui à mão.
+                        Libera o envio do comprovante de desmontagem e assistência
+                        que chegam pela integração. Montagem lançada aqui à mão
+                        nunca vai: é serviço particular.
                       </span>
                     </span>
                   </label>

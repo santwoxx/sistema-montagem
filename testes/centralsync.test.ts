@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ehDesmontagemOuAssistencia,
   idDaEntregaNoCentralSync,
+  lancadaAMaoNaLojaDoCentralSync,
   nomeParaCentralSync,
   pareceIdDoCentralSync,
   podeEnviarAoCentralSync,
@@ -53,14 +54,43 @@ describe("podeEnviarAoCentralSync", () => {
     ).toBe(true);
   });
 
-  it("libera a montagem lançada à mão quando a loja é a do CentralSync", () => {
+  it("não libera montagem lançada à mão, nem na loja do CentralSync", () => {
+    // O que é digitado no painel é serviço particular da empresa: mandar o
+    // comprovante para a Central Móveis punha na caixa deles um serviço que
+    // não é da loja. Já foi liberado; não é mais.
     expect(
       podeEnviarAoCentralSync({ numeroPedido: "696228", loja: LOJA_CENTRALSYNC })
-    ).toBe(true);
-    // Nº do pedido é opcional no formulário -- sem ele o envio continua valendo.
+    ).toBe(false);
+    // Nº do pedido é opcional no formulário -- sem ele também não vai.
     expect(
       podeEnviarAoCentralSync({ numeroPedido: null, loja: LOJA_CENTRALSYNC })
+    ).toBe(false);
+    // Um número que só CONTÉM o prefixo em outro lugar não passa por pedido
+    // da integração.
+    expect(
+      podeEnviarAoCentralSync({ numeroPedido: "NF-del-99", loja: LOJA_CENTRALSYNC })
+    ).toBe(false);
+  });
+
+  it("aponta a montagem manual na loja do CentralSync, que a tela precisa explicar", () => {
+    expect(
+      lancadaAMaoNaLojaDoCentralSync({ numeroPedido: "696228", loja: LOJA_CENTRALSYNC })
     ).toBe(true);
+    // Nas outras combinações não há o que explicar: ou o envio existe, ou a
+    // loja nem sugere que existiria.
+    expect(
+      lancadaAMaoNaLojaDoCentralSync({ numeroPedido: "del-1755123456789", loja: LOJA_CENTRALSYNC })
+    ).toBe(false);
+    expect(
+      lancadaAMaoNaLojaDoCentralSync({
+        numeroPedido: "ASSIST-del-1755123456789-2026-08-27",
+        loja: LOJA_CENTRALSYNC,
+      })
+    ).toBe(false);
+    expect(
+      lancadaAMaoNaLojaDoCentralSync({ numeroPedido: "696228", loja: LOJA_QUALQUER })
+    ).toBe(false);
+    expect(lancadaAMaoNaLojaDoCentralSync({ numeroPedido: "696228", loja: null })).toBe(false);
   });
 
   it("não libera montagem à mão de outra loja parceira", () => {

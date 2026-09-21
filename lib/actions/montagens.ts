@@ -14,6 +14,7 @@ import {
 } from "@/lib/upload";
 import { linkWhatsapp, OCORRENCIA_LABEL, paraNumeroBr } from "@/lib/format";
 import {
+  ehDesmontagemOuAssistencia,
   idDaEntregaNoCentralSync,
   nomeParaCentralSync,
   podeEnviarAoCentralSync,
@@ -698,8 +699,8 @@ export async function confirmarEnvioCentralSyncAction(
     where: { id },
     include: {
       montador: { select: { nome: true } },
-      // integraCentralSync é o que libera o envio das montagens lançadas à
-      // mão (ver podeEnviarAoCentralSync em lib/centralsync.ts).
+      // integraCentralSync é o que libera o envio de desmontagem e
+      // assistência (ver podeEnviarAoCentralSync em lib/centralsync.ts).
       loja: { select: { integraCentralSync: true } },
     },
   });
@@ -709,11 +710,16 @@ export async function confirmarEnvioCentralSyncAction(
   const comErro = (mensagem: string) =>
     redirect(`${voltarPara}?erro=${encodeURIComponent(mensagem)}`);
 
+  // A checagem mora aqui e não só na tela: o botão some da montagem lançada
+  // à mão, mas uma aba aberta antes desta regra (ou um formulário
+  // reenviado) ainda chegaria à ação.
   if (!podeEnviarAoCentralSync(montagem)) {
     comErro(
       montagem.lojaId === null
         ? "Serviço particular não vai para o CentralSync: foi fechado direto com o cliente, não há loja do outro lado para receber o comprovante."
-        : "Esta montagem não é de uma loja ligada ao CentralSync, então não há o que enviar para lá. Se for, marque \"Loja atendida pelo CentralSync\" no cadastro dela em Lojas."
+        : ehDesmontagemOuAssistencia(montagem.numeroPedido)
+          ? "Este serviço não é de uma loja ligada ao CentralSync, então não há o que enviar para lá. Se for, marque \"Loja atendida pelo CentralSync\" no cadastro dela em Lojas."
+          : "Montagem lançada à mão é serviço particular: não vai para o CentralSync nem para a Central Móveis. Só os pedidos que chegam pela integração voltam para lá."
     );
     return;
   }
