@@ -28,6 +28,13 @@ export const maxDuration = 60;
 // Quantas montagens da fila do CentralSync a tela lista de uma vez.
 const LIMITE_FILA = 10;
 
+// Teto da lista "Próximas montagens". Era 6, e o cartão "Pendentes" logo
+// acima contava todas: com 11 em aberto a tela mostrava 6 e não dizia que
+// havia mais -- as outras cinco simplesmente não existiam para quem olhava.
+// O teto agora só existe para a página não virar um rolo sem fim, e quando
+// ele corta a tela avisa (ver o rodapé da lista).
+const LIMITE_PROXIMAS = 50;
+
 export default async function AdminDashboardPage({
   searchParams,
 }: {
@@ -94,7 +101,7 @@ export default async function AdminDashboardPage({
         status: { in: ["PENDENTE", "EM_ANDAMENTO"] },
       },
       orderBy: [{ dataAgendada: "asc" }, { createdAt: "desc" }],
-      take: 6,
+      take: LIMITE_PROXIMAS,
       select: {
         id: true,
         clienteNome: true,
@@ -168,6 +175,8 @@ export default async function AdminDashboardPage({
       },
     }),
   ]);
+
+  const totalEmAberto = pendentes + emAndamento;
 
   const filaVisivel = filaCentralSync.slice(0, LIMITE_FILA);
   const temMaisNaFila = filaCentralSync.length > LIMITE_FILA;
@@ -400,7 +409,13 @@ export default async function AdminDashboardPage({
       </div>
 
       <div className="mt-8">
-        <PageHeader titulo="Próximas montagens" />
+        {/* A contagem vem dos mesmos cartões Pendentes + Em andamento lá de
+            cima (o filtro da lista é exatamente esse), então o número do
+            título e o dos cartões nunca discordam. */}
+        <PageHeader
+          titulo={`Próximas montagens (${totalEmAberto})`}
+          descricao="Pendentes e em andamento, da data mais próxima para a mais distante."
+        />
         {proximas.length === 0 ? (
           <Vazio>Nenhuma montagem pendente ou em andamento no momento.</Vazio>
         ) : (
@@ -465,6 +480,14 @@ export default async function AdminDashboardPage({
                 </AcoesCliente>
               </Card>
             ))}
+            {proximas.length < totalEmAberto ? (
+              <p className="text-sm text-slate-500">
+                Mostrando as {proximas.length} mais próximas de {totalEmAberto} em aberto.{" "}
+                <Link href="/admin/montagens" className="font-medium text-navy hover:underline">
+                  Ver todas em Montagens
+                </Link>
+              </p>
+            ) : null}
           </div>
         )}
       </div>
