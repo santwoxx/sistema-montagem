@@ -5,6 +5,8 @@ import { Badge, Button, Card, Input, LinkButton, PageHeader, Select, Vazio } fro
 import { formatarData, formatarMoeda, STATUS_COLOR, STATUS_LABEL } from "@/lib/format";
 import type { Prisma, StatusMontagem } from "@prisma/client";
 import { nomeDaOrigem, VALOR_PARTICULAR_FORM } from "@/lib/servico";
+import { buscarIdsDeMontagens } from "@/lib/buscar-montagens";
+import { lerTermo } from "@/lib/busca";
 
 export default async function MontagensPage({
   searchParams,
@@ -17,7 +19,7 @@ export default async function MontagensPage({
   }>;
 }) {
   const { status, lojaId, montadorId, busca } = await searchParams;
-  const termo = (busca ?? "").trim();
+  const termo = lerTermo(busca);
 
   const [lojas, montadores] = await Promise.all([
     prisma.loja.findMany({ orderBy: { nome: "asc" } }),
@@ -33,13 +35,15 @@ export default async function MontagensPage({
   if (montadorId) where.montadorId = montadorId === "nenhum" ? null : montadorId;
   // A lista corta nas 100 mais recentes: sem uma busca, uma montagem antiga
   // só era encontrada garimpando os filtros de loja/montador um a um.
+  //
+  // É a mesma busca da lupa do topo (sem acento, telefone em qualquer
+  // formato, nome do montador) -- os links "ver todas" e os cartões de
+  // cliente de lá caem aqui, e o resultado não pode mudar no caminho. Os
+  // ids vêm limitados às 1000 mais recentes que batem; os filtros abaixo
+  // continuam valendo por cima deles.
   if (termo) {
-    where.OR = [
-      { clienteNome: { contains: termo, mode: "insensitive" } },
-      { numeroPedido: { contains: termo, mode: "insensitive" } },
-      { clienteEndereco: { contains: termo, mode: "insensitive" } },
-      { descricaoServico: { contains: termo, mode: "insensitive" } },
-    ];
+    const { ids } = await buscarIdsDeMontagens(termo, { limite: 1000 });
+    where.id = { in: ids };
   }
 
   const LIMITE = 100;
@@ -81,7 +85,7 @@ export default async function MontagensPage({
             <Input
               name="busca"
               defaultValue={termo}
-              placeholder="Buscar por cliente, endereço, nº do pedido ou serviço"
+              placeholder="Buscar por cliente, telefone, endereço, nº do pedido, serviço ou montador"
             />
           </div>
           <Select name="status" defaultValue={status ?? ""}>

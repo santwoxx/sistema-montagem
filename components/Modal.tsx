@@ -20,11 +20,17 @@ export function Modal({
   aberto,
   onClose,
   titulo,
+  posicao = "centro",
   children,
 }: {
   aberto: boolean;
   onClose: () => void;
   titulo?: string;
+  /**
+   * "topo" é para caixa com campo de digitar: no celular o teclado sobe por
+   * baixo, e numa caixa centralizada cobria o botão de confirmar.
+   */
+  posicao?: "centro" | "topo";
   children: ReactNode;
 }) {
   const painelRef = useRef<HTMLDivElement>(null);
@@ -92,7 +98,12 @@ export function Modal({
   if (!aberto) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div
+      className={
+        "fixed inset-0 z-50 flex justify-center p-4 " +
+        (posicao === "topo" ? "items-start pt-16 sm:pt-[15vh]" : "items-center")
+      }
+    >
       {/* Fundo. aria-hidden porque fechar clicando aqui já está disponível
           pelo Esc e pelos botões de cancelar -- não é um controle à parte. */}
       <div
