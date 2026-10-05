@@ -24,6 +24,11 @@ const variantes = {
 
 type Variante = keyof typeof variantes;
 
+/** As classes de um botão, para um `<a>` comum (ex.: link de download). */
+export function classesDeBotao(variante: Variante = "primario", className?: string) {
+  return cx(estilosBase, variantes[variante], className);
+}
+
 export function Button({
   variante = "primario",
   className,

@@ -23,6 +23,17 @@ enum StatusMontagem {
   CANCELADO
 }
 
+// O que foi feito. Antes só existia "montagem" e o resto se adivinhava pelo
+// nº do pedido do CentralSync ("ASSIST-"/"DESM-"); montagem em loja
+// (mostruário, peça de exposição) não tinha como ser marcada. Ver
+// lib/tipo-servico.ts.
+enum TipoServico {
+  MONTAGEM
+  ASSISTENCIA
+  DESMONTAGEM
+  MONTAGEM_LOJA
+}
+
 enum TipoOcorrencia {
   CLIENTE_AUSENTE
   PECA_DANIFICADA
@@ -105,6 +116,10 @@ model Montagem {
   clienteEndereco String
 
   descricaoServico String
+  // Classificação para os relatórios. Não muda dinheiro nem a integração:
+  // o que decide o envio ao CentralSync continua sendo o nº do pedido (ver
+  // podeEnviarAoCentralSync em lib/centralsync.ts).
+  tipoServico      TipoServico @default(MONTAGEM)
   valorServico     Float
   percentualMontador Float @default(0)
   valorMontador      Float @default(0)

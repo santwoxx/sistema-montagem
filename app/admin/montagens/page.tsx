@@ -7,6 +7,7 @@ import type { Prisma, StatusMontagem } from "@prisma/client";
 import { nomeDaOrigem, VALOR_PARTICULAR_FORM } from "@/lib/servico";
 import { buscarIdsDeMontagens } from "@/lib/buscar-montagens";
 import { lerTermo } from "@/lib/busca";
+import { TIPO_SERVICO_COLOR, TIPO_SERVICO_LABEL } from "@/lib/tipo-servico";
 
 export default async function MontagensPage({
   searchParams,
@@ -60,6 +61,7 @@ export default async function MontagensPage({
         dataAgendada: true,
         valorServico: true,
         status: true,
+        tipoServico: true,
         pagoPelaLoja: true,
         feitoPorAdm: true,
         loja: { select: { nome: true } },
@@ -151,6 +153,11 @@ export default async function MontagensPage({
                     <Badge className={STATUS_COLOR[m.status]}>
                       {STATUS_LABEL[m.status]}
                     </Badge>
+                    {m.tipoServico !== "MONTAGEM" ? (
+                      <Badge className={TIPO_SERVICO_COLOR[m.tipoServico]}>
+                        {TIPO_SERVICO_LABEL[m.tipoServico]}
+                      </Badge>
+                    ) : null}
                     {!m.pagoPelaLoja && m.status !== "CANCELADO" ? (
                       <span className="text-xs text-amber-600">Loja não pagou</span>
                     ) : null}

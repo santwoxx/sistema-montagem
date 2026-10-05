@@ -11,6 +11,7 @@ import { pareceIdDoCentralSync } from "@/lib/centralsync";
 import { formatarMoeda, paraInputDate, paraNumeroBr } from "@/lib/format";
 import { comprimirImagem, trocarArquivoDoInput } from "@/lib/imagem";
 import { VALOR_PARTICULAR_FORM } from "@/lib/servico";
+import { TIPO_SERVICO_LABEL, TIPOS_SERVICO, tipoPeloPedido } from "@/lib/tipo-servico";
 import { PERIODO_LABEL, type PeriodoAgendamento } from "@/lib/validacao";
 
 // Mesmo teto do servidor (lib/upload.ts): acima disso o Next recusa o envio
@@ -35,7 +36,13 @@ const TAMANHO_MAXIMO_MANUAL = 3 * 1024 * 1024;
 const COMISSAO_MONTADOR_CENTRALSYNC = "8";
 const COMISSAO_ASSISTENCIA_CENTRALSYNC = "2";
 
-type Loja = { id: string; nome: string; percentualAssistencia?: number };
+type Loja = {
+  id: string;
+  nome: string;
+  percentualAssistencia?: number;
+  endereco?: string | null;
+  telefone?: string | null;
+};
 type Montador = { id: string; nome: string; comissaoPadrao?: number };
 type Comissao = { montadorId: string; lojaId: string; percentual: number };
 
@@ -63,6 +70,7 @@ export function NovaMontagemForm({
     clienteEndereco?: string;
     numeroPedido?: string;
     descricaoServico?: string;
+    tipoServico?: string;
     valorServico?: string;
     percentualAssistencia?: string;
     percentualMontador?: string;
@@ -93,6 +101,7 @@ export function NovaMontagemForm({
   const [descricaoServico, setDescricaoServico] = useState(
     valoresIniciais?.descricaoServico ?? ""
   );
+  const [tipoServico, setTipoServico] = useState(valoresIniciais?.tipoServico ?? "MONTAGEM");
   const [dataAgendada, setDataAgendada] = useState(valoresIniciais?.dataAgendada ?? "");
   const [observacoes, setObservacoes] = useState(valoresIniciais?.observacoes ?? "");
   const [notaUrl, setNotaUrl] = useState(valoresIniciais?.notaUrl ?? "");
@@ -150,6 +159,9 @@ export function NovaMontagemForm({
     setClienteTelefone(nota.clienteTelefone ?? "");
     setClienteEndereco(nota.clienteEndereco);
     setNumeroPedido(nota.numeroPedido ?? "");
+    // Assistência e desmontagem do CentralSync já chegam marcadas pelo
+    // prefixo do pedido ("ASSIST-"/"DESM-").
+    setTipoServico(tipoPeloPedido(nota.numeroPedido));
     setDescricaoServico(nota.descricaoServico);
     setObservacoes(nota.observacoes ?? "");
     if (nota.notaUrl) setNotaUrl(nota.notaUrl);
@@ -257,6 +269,16 @@ export function NovaMontagemForm({
   // Serviço fechado direto com o cliente: não há loja para dividir a nota
   // nem assistência a cobrar dela, então a nota inteira é da empresa.
   const ehParticular = lojaId === VALOR_PARTICULAR_FORM;
+
+  // Montagem em loja: quem "recebe" o serviço é a própria loja, então
+  // nome e endereço dela fazem as vezes dos do cliente.
+  const lojaEscolhida = lojasDisponiveis.find((l) => l.id === lojaId);
+  function preencherComDadosDaLoja() {
+    if (!lojaEscolhida) return;
+    setClienteNome(lojaEscolhida.nome);
+    if (lojaEscolhida.endereco) setClienteEndereco(lojaEscolhida.endereco);
+    if (lojaEscolhida.telefone) setClienteTelefone(lojaEscolhida.telefone);
+  }
 
   const valorServicoCalculado = useMemo(() => {
     return paraNumeroBr(valorServico) || 0;
@@ -415,6 +437,20 @@ export function NovaMontagemForm({
         <h2 className="mb-4 text-base font-semibold text-gray-900">
           Dados do cliente
         </h2>
+        {tipoServico === "MONTAGEM_LOJA" ? (
+          <div className="mb-4 rounded-xl border border-sky-100 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+            <p>Montagem em loja: use o nome e o endereço da loja no lugar dos do cliente.</p>
+            {lojaEscolhida ? (
+              <button
+                type="button"
+                onClick={preencherComDadosDaLoja}
+                className="mt-2 font-medium text-sky-800 underline hover:text-navy"
+              >
+                Preencher com os dados de {lojaEscolhida.nome}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Nome do cliente">
             <Input
@@ -452,6 +488,24 @@ export function NovaMontagemForm({
           Serviço e valores
         </h2>
         <div className="grid gap-4 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <Field
+              label="Tipo de serviço"
+              hint="Separa montagens, assistências, desmontagens e montagens em loja no relatório."
+            >
+              <Select
+                name="tipoServico"
+                value={tipoServico}
+                onChange={(e) => setTipoServico(e.target.value)}
+              >
+                {TIPOS_SERVICO.map((tipo) => (
+                  <option key={tipo} value={tipo}>
+                    {TIPO_SERVICO_LABEL[tipo]}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
           <div>
             <Field
               label="Nº do pedido (opcional)"

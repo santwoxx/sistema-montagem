@@ -1,11 +1,20 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { Badge, Button, Card, Field, Input, PageHeader, Select, StatCard, Vazio } from "@/components/ui";
+import { Badge, Button, Card, Field, Input, LinkButton, PageHeader, Select, StatCard, Vazio } from "@/components/ui";
 import { emCentavos, somarDinheiro, somarReceitaDaEmpresa } from "@/lib/financeiro";
-import { formatarData, formatarMoeda } from "@/lib/format";
+import { formatarData, formatarMoeda, paraInputDate } from "@/lib/format";
 import { intervaloDoMes, mesAtual } from "@/lib/datas";
 import type { Prisma } from "@prisma/client";
-import { ehParticular, filtroDeOrigem, lerOrigem, nomeDaOrigem, ORIGENS, quemPaga } from "@/lib/servico";
+import {
+  ehParticular,
+  filtroDeOrigem,
+  lerOrigem,
+  nomeDaOrigem,
+  ORIGENS,
+  quemPaga,
+  VALOR_PARTICULAR_FORM,
+} from "@/lib/servico";
+import { VALOR_SO_LOJAS } from "@/lib/relatorio";
 
 export default async function FinanceiroPage({
   searchParams,
@@ -95,6 +104,19 @@ export default async function FinanceiroPage({
     montagens.filter((m) => !m.pagoAoMontador).map((m) => m.valorMontador)
   );
 
+  // O relatório detalhado abre com o que está filtrado aqui: o mês vira o
+  // período de/até e a origem vira o filtro de loja de lá.
+  const paramsRelatorio = new URLSearchParams({
+    de: paraInputDate(inicio),
+    ate: paraInputDate(new Date(fim.getTime() - 1)),
+    base,
+  });
+  const lojaDoRelatorio =
+    lojaId ||
+    (origem === "particular" ? VALOR_PARTICULAR_FORM : origem === "loja" ? VALOR_SO_LOJAS : "");
+  if (lojaDoRelatorio) paramsRelatorio.set("lojaId", lojaDoRelatorio);
+  if (montadorId) paramsRelatorio.set("montadorId", montadorId);
+
   return (
     <div>
       <PageHeader
@@ -103,6 +125,11 @@ export default async function FinanceiroPage({
           base === "conclusao"
             ? "Resumo por período, loja e montador — contando pela data de conclusão."
             : "Resumo por período, loja e montador — contando pela data de cadastro."
+        }
+        acoes={
+          <LinkButton href={`/admin/financeiro/relatorio?${paramsRelatorio}`}>
+            Relatório detalhado
+          </LinkButton>
         }
       />
 

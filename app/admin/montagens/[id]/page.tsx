@@ -15,6 +15,7 @@ import { AcoesCliente } from "@/components/AcoesCliente";
 import { Alerta, Badge, Button, Card, PageHeader } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
 import { NovaMontagemForm } from "@/components/NovaMontagemForm";
+import { TIPO_SERVICO_COLOR, TIPO_SERVICO_LABEL } from "@/lib/tipo-servico";
 import { FormConfirmar } from "@/components/FormConfirmar";
 import { ComprovanteAdmin } from "@/components/ComprovanteAdmin";
 import { Estrelas } from "@/components/Estrelas";
@@ -96,9 +97,16 @@ export default async function MontagemDetalhePage({
         titulo={montagem.clienteNome}
         descricao={montagem.numeroPedido ? `Pedido nº ${montagem.numeroPedido}` : undefined}
         acoes={
-          <Badge className={STATUS_COLOR[montagem.status]}>
-            {STATUS_LABEL[montagem.status]}
-          </Badge>
+          <>
+            {montagem.tipoServico !== "MONTAGEM" ? (
+              <Badge className={TIPO_SERVICO_COLOR[montagem.tipoServico]}>
+                {TIPO_SERVICO_LABEL[montagem.tipoServico]}
+              </Badge>
+            ) : null}
+            <Badge className={STATUS_COLOR[montagem.status]}>
+              {STATUS_LABEL[montagem.status]}
+            </Badge>
+          </>
         }
       />
 
@@ -437,6 +445,7 @@ export default async function MontagemDetalhePage({
             clienteEndereco: montagem.clienteEndereco,
             numeroPedido: montagem.numeroPedido ?? "",
             descricaoServico: montagem.descricaoServico,
+            tipoServico: montagem.tipoServico,
             valorServico: String(montagem.valorServico),
             percentualAssistencia: String(montagem.percentualAssistencia),
             percentualMontador: String(montagem.percentualMontador),

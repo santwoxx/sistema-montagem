@@ -21,6 +21,7 @@ import {
 } from "@/lib/centralsync";
 import { instanteLocal } from "@/lib/datas";
 import { lojaIdDoFormulario, nomeDaOrigem } from "@/lib/servico";
+import { lerTipoServico, tipoPeloPedido } from "@/lib/tipo-servico";
 import {
   OrigemEnvioSchema,
   STATUS_PERMITIDOS_MONTADOR,
@@ -68,6 +69,7 @@ function revalidarMontagem(id?: string) {
   revalidatePath("/admin");
   revalidatePath("/admin/montagens");
   revalidatePath("/admin/financeiro");
+  revalidatePath("/admin/financeiro/relatorio");
   revalidatePath("/admin/rota");
   revalidatePath("/montador");
   revalidatePath("/montador/financeiro");
@@ -135,6 +137,9 @@ export async function criarMontagemAction(formData: FormData) {
   const descricaoServico = String(formData.get("descricaoServico") || "").trim();
   const observacoes = String(formData.get("observacoes") || "").trim();
   const notaUrl = String(formData.get("notaUrl") || "").trim();
+  // Sem escolha válida no formulário, vale o que o nº do pedido indica.
+  const tipoServico =
+    lerTipoServico(formData.get("tipoServico")) ?? tipoPeloPedido(numeroPedido);
 
   const valorServico = arredondar(paraNumero(formData.get("valorServico")));
   // Sem loja não há de quem cobrar assistência -- ela é o que a empresa
@@ -186,6 +191,7 @@ export async function criarMontagemAction(formData: FormData) {
       clienteEndereco,
       numeroPedido: numeroPedido || null,
       descricaoServico,
+      tipoServico,
       observacoes: observacoes || null,
       valorServico,
       percentualAssistencia,
@@ -242,6 +248,8 @@ export async function atualizarMontagemAction(id: string, formData: FormData) {
   const descricaoServico = String(formData.get("descricaoServico") || "").trim();
   const observacoes = String(formData.get("observacoes") || "").trim();
   const notaUrl = String(formData.get("notaUrl") || "").trim();
+  const tipoServico =
+    lerTipoServico(formData.get("tipoServico")) ?? tipoPeloPedido(numeroPedido);
   // Antes isto era um `as` direto no valor do formulário: um status
   // inventado atravessava até o Prisma e derrubava a tela com erro 500 em
   // vez de uma mensagem.
@@ -294,6 +302,7 @@ export async function atualizarMontagemAction(id: string, formData: FormData) {
       clienteEndereco,
       numeroPedido: numeroPedido || null,
       descricaoServico,
+      tipoServico,
       observacoes: observacoes || null,
       valorServico,
       percentualAssistencia,

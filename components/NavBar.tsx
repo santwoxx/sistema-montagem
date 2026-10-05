@@ -155,7 +155,7 @@ export function NavBar({
 
   return (
     <>
-      <header className="sticky top-0 z-10 border-b border-navy-light bg-navy/95 backdrop-blur-sm shadow-md">
+      <header className="sticky top-0 z-10 border-b border-navy-light bg-navy/95 backdrop-blur-sm shadow-md print:hidden">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-2 px-4 py-3 sm:gap-3">
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-linear-to-br from-gold to-gold-hover text-white text-xl shadow-sm shadow-gold/30">
