@@ -11,7 +11,7 @@
 // acerto de 8% nem assistência, então o valor da nota é receita cheia da
 // empresa.
 
-import type { Prisma } from "@prisma/client";
+import type { Prisma, TipoServico } from "@prisma/client";
 
 export const ORIGENS = ["todas", "loja", "particular"] as const;
 export type Origem = (typeof ORIGENS)[number];
@@ -67,4 +67,26 @@ export const VALOR_PARTICULAR_FORM = "PARTICULAR";
 export function lojaIdDoFormulario(valor: string): string | null {
   const limpo = valor.trim();
   return !limpo || limpo === VALOR_PARTICULAR_FORM ? null : limpo;
+}
+
+/**
+ * Se uma montagem NOVA nasce particular, independentemente da loja escolhida.
+ *
+ * Só o que chega pela integração do CentralSync é serviço de loja. O que é
+ * lançado no painel -- digitado ou importado por foto/XML da nota fiscal --
+ * é serviço fechado direto pela empresa: a nota inteira é dela e não há
+ * assistência a cobrar de ninguém. Antes a importação escolhia sozinha a
+ * loja que aparece na nota fiscal, e a montagem entrava no financeiro como
+ * 8% + assistência de uma loja que não tinha nada a ver com o serviço.
+ *
+ * A exceção é a montagem em loja (mostruário): ali a loja é a cliente.
+ *
+ * Vale só para montagem nova -- as antigas ficam como foram lançadas, e
+ * editar uma montagem continua deixando escolher a loja.
+ */
+export function lancadaComoParticular(montagem: {
+  daIntegracao: boolean;
+  tipoServico: TipoServico | string;
+}): boolean {
+  return !montagem.daIntegracao && montagem.tipoServico !== "MONTAGEM_LOJA";
 }

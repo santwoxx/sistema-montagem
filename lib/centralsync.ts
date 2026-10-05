@@ -71,6 +71,14 @@ export function ehDesmontagemOuAssistencia(numeroPedido: string | null): boolean
 }
 
 /**
+ * Se o nº do pedido é de algo que chegou pela integração: o pedido
+ * ("del-...") ou a desmontagem/assistência que veio junto.
+ */
+export function veioDoCentralSync(numeroPedido: string | null): boolean {
+  return pareceIdDoCentralSync(numeroPedido) || ehDesmontagemOuAssistencia(numeroPedido);
+}
+
+/**
  * "ASSISTÊNCIA", "DESMONTAGEM" ou null se for montagem mesmo. É o que vai na
  * frente do nome enviado à loja, para a linha não ser lida como montagem.
  */

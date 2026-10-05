@@ -233,6 +233,28 @@ export function resumoPorMontador(linhas: LinhaRelatorio[]) {
     .sort(porQuantidadeENome);
 }
 
+/**
+ * Serviço de loja x serviço particular, lado a lado. Montagem lançada no
+ * painel nasce particular (ver lancadaComoParticular em lib/servico.ts), e
+ * é aqui que dá para ver quanto cada frente rende. Só entram as origens que
+ * têm alguma montagem.
+ */
+export function resumoPorOrigem(linhas: LinhaRelatorio[]) {
+  return (["loja", "particular"] as const)
+    .map((origem) => {
+      const daOrigem = linhas.filter((m) => (m.lojaId === null) === (origem === "particular"));
+      return {
+        origem,
+        porTipo: contarPorTipo(daOrigem),
+        ...totalizar(daOrigem),
+        aReceber: somarDinheiro(
+          daOrigem.filter((m) => !m.pagoPelaLoja).map((m) => receitaDaEmpresa(m))
+        ),
+      };
+    })
+    .filter((r) => r.quantidade > 0);
+}
+
 /** Quanto cada loja (e os particulares) gerou de cada tipo e o que deve. */
 export function resumoPorLoja(linhas: LinhaRelatorio[]) {
   return [...agrupar(linhas, (m) => m.lojaId ?? VALOR_PARTICULAR_FORM)]
@@ -306,6 +328,7 @@ export function gerarPlanilha(linhas: LinhaRelatorio[], base: FiltrosRelatorio["
     "Cliente",
     "Telefone",
     "Endereço",
+    "Origem",
     "Loja",
     "Montador",
     "Nº do pedido",
@@ -329,6 +352,7 @@ export function gerarPlanilha(linhas: LinhaRelatorio[], base: FiltrosRelatorio["
         celulaTexto(m.clienteNome),
         celulaTexto(m.clienteTelefone),
         celulaTexto(m.clienteEndereco),
+        m.lojaId === null ? "Particular" : "Loja",
         celulaTexto(nomeDaOrigem(m.loja)),
         celulaTexto(responsavel(m)),
         celulaTexto(m.numeroPedido),

@@ -249,6 +249,21 @@ e a lista de montagens têm um filtro para ver só uma das duas.
 Montagem particular não é enviada ao CentralSync — não há loja do outro lado
 para receber a confirmação.
 
+**Montagem lançada no painel nasce particular.** Só o que chega pela
+integração do CentralSync (em "Notas pendentes") é serviço de loja. O que é
+digitado em "Nova montagem" ou importado por foto/XML da nota fiscal é
+gravado sem loja, seja qual for a loja da nota (a importação não escolhe nem
+cadastra mais a loja emitente). A exceção é o tipo de serviço "Montagem em
+loja" (mostruário), em que a loja é a cliente e precisa ser escolhida. A
+regra está em `lancadaComoParticular` (`lib/servico.ts`), aplicada no
+formulário e no servidor; vale para montagem nova — editar uma montagem
+continua deixando escolher a loja.
+
+O relatório detalhado (Financeiro → Relatório detalhado) mostra as duas
+frentes no bloco "Loja x particular", além da quebra por tipo de serviço
+(montagem, assistência, desmontagem, montagem em loja), por montador e por
+loja.
+
 ## Integração com o CentralSync (loja Central Móveis)
 
 O CentralSync é o sistema da loja. A ligação entre os dois é de mão dupla:

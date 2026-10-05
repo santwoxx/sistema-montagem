@@ -29,6 +29,7 @@ import {
   responsavel,
   resumoPorLoja,
   resumoPorMontador,
+  resumoPorOrigem,
   resumoPorTipo,
   SITUACAO_LABEL,
   SITUACOES,
@@ -37,7 +38,12 @@ import {
 } from "@/lib/relatorio";
 import { receitaDaEmpresa } from "@/lib/financeiro";
 import { nomeDaOrigem, VALOR_PARTICULAR_FORM } from "@/lib/servico";
-import { TIPO_SERVICO_COLOR, TIPO_SERVICO_PLURAL, TIPOS_SERVICO } from "@/lib/tipo-servico";
+import {
+  TIPO_SERVICO_COLOR,
+  TIPO_SERVICO_LABEL,
+  TIPO_SERVICO_PLURAL,
+  TIPOS_SERVICO,
+} from "@/lib/tipo-servico";
 
 /** Cabeçalho curto das colunas por tipo (as tabelas ficam largas no celular). */
 const COLUNA_TIPO: Record<TipoServico, string> = {
@@ -110,6 +116,7 @@ export default async function RelatorioPage({
   const total = totalizar(linhas);
   const porMontador = resumoPorMontador(linhas);
   const porLoja = resumoPorLoja(linhas);
+  const porOrigem = resumoPorOrigem(linhas);
   const lista = listaPorTipo(linhas, filtros.base);
   const descricao = descreverFiltros(filtros, lojas, montadores);
   const rotuloData = filtros.base === "conclusao" ? "Concluída em" : "Cadastrada em";
@@ -277,6 +284,55 @@ export default async function RelatorioPage({
               cor="text-emerald-600"
               icone="📈"
             />
+          </div>
+
+          <h2 className="mb-3 text-base font-semibold text-gray-900 break-after-avoid">
+            Loja x particular
+          </h2>
+          <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 print:grid-cols-2">
+            {porOrigem.map((o) => (
+              <Card key={o.origem} className="break-inside-avoid">
+                <p className="text-sm font-semibold text-gray-900">
+                  {o.origem === "loja" ? "Serviços de loja" : "Serviços particulares"}
+                </p>
+                <p className="text-xs text-slate-500">
+                  {o.origem === "loja"
+                    ? "A loja paga a empresa: 8% da nota + assistência."
+                    : "Lançados à mão: o cliente paga a nota inteira à empresa."}
+                </p>
+                <p className="mt-3 text-3xl font-bold tracking-tight text-gray-900">
+                  {o.quantidade}
+                </p>
+                <p className="text-xs text-slate-500">
+                  {TIPOS_SERVICO.filter((t) => o.porTipo[t] > 0)
+                    .map(
+                      (t) =>
+                        `${o.porTipo[t]} ${(o.porTipo[t] === 1 ? TIPO_SERVICO_LABEL[t] : TIPO_SERVICO_PLURAL[t]).toLowerCase()}`
+                    )
+                    .join(" · ")}
+                </p>
+                <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 border-t border-slate-100 pt-3 text-sm">
+                  <dt className="text-slate-500">Notas</dt>
+                  <dd className="text-right font-medium text-gray-900">
+                    {formatarMoeda(o.valorNotas)}
+                  </dd>
+                  <dt className="text-slate-500">Receita da empresa</dt>
+                  <dd className="text-right font-medium text-emerald-700">
+                    {formatarMoeda(o.receitaEmpresa)}
+                  </dd>
+                  <dt className="text-slate-500">Comissões</dt>
+                  <dd className="text-right font-medium text-blue-700">
+                    {formatarMoeda(o.comissaoMontadores)}
+                  </dd>
+                  <dt className="text-slate-500">Falta receber</dt>
+                  <dd
+                    className={`text-right font-medium ${o.aReceber > 0 ? "text-amber-700" : "text-slate-400"}`}
+                  >
+                    {formatarMoeda(o.aReceber)}
+                  </dd>
+                </dl>
+              </Card>
+            ))}
           </div>
 
           <h2 className="mb-3 text-base font-semibold text-gray-900 break-after-avoid">Por montador</h2>

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { veioDoCentralSync } from "@/lib/centralsync";
 import {
   ehParticular,
+  lancadaComoParticular,
   filtroDeOrigem,
   lerOrigem,
   lojaIdDoFormulario,
@@ -62,5 +64,25 @@ describe("loja escolhida no formulário", () => {
     expect(lojaIdDoFormulario("cltm123")).toBe("cltm123");
     // Espaço grudado no id (colado de outro lugar) não pode virar particular.
     expect(lojaIdDoFormulario(" cltm123 ")).toBe("cltm123");
+  });
+});
+
+describe("montagem lançada no painel nasce particular", () => {
+  it("só o que veio do CentralSync leva loja", () => {
+    expect(lancadaComoParticular({ daIntegracao: false, tipoServico: "MONTAGEM" })).toBe(true);
+    expect(lancadaComoParticular({ daIntegracao: false, tipoServico: "ASSISTENCIA" })).toBe(true);
+    expect(lancadaComoParticular({ daIntegracao: true, tipoServico: "MONTAGEM" })).toBe(false);
+  });
+
+  it("montagem em loja continua com a loja", () => {
+    expect(lancadaComoParticular({ daIntegracao: false, tipoServico: "MONTAGEM_LOJA" })).toBe(false);
+  });
+
+  it("reconhece o que chegou pela integração pelo nº do pedido", () => {
+    expect(veioDoCentralSync("del-1755")).toBe(true);
+    expect(veioDoCentralSync("ASSIST-9")).toBe(true);
+    expect(veioDoCentralSync(" desm-1")).toBe(true);
+    expect(veioDoCentralSync("48213")).toBe(false);
+    expect(veioDoCentralSync(null)).toBe(false);
   });
 });

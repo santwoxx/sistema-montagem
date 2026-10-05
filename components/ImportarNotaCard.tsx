@@ -5,10 +5,8 @@ import { Alerta } from "@/components/ui";
 import {
   importarNotaAction,
   importarNotaTextoAction,
-  resolverOuCriarLojaAction,
   enviarFotoNotaAction,
   type DadosImportados,
-  type ResultadoResolucaoLoja,
 } from "@/lib/actions/importar";
 
 const TAMANHO_MAXIMO = 15 * 1024 * 1024; // 15 MB — fotos de celular podem ser grandes
@@ -19,21 +17,15 @@ const TAMANHO_MAXIMO = 15 * 1024 * 1024; // 15 MB — fotos de celular podem ser
  * ou imagens de notas impressas/DANFE (lidas por OCR no próprio navegador,
  * com tesseract.js — funciona igual em computador e celular, sem custo).
  *
- * Depois de extrair os dados, também resolve a loja emitente: se já existe
- * uma loja cadastrada com aquele nome/CNPJ, seleciona ela; senão, cadastra
- * uma loja nova automaticamente.
+ * A loja emitente da nota NÃO é escolhida nem cadastrada: montagem lançada
+ * no painel é serviço particular (ver lancadaComoParticular em
+ * lib/servico.ts). Antes ela era, e cada nota de uma loja nova enchia a
+ * lista de Lojas com cadastros que nenhum serviço usava.
  */
-export function ImportarNotaCard({
-  onDados,
-  onLojaResolvida,
-}: {
-  onDados: (dados: DadosImportados) => void;
-  onLojaResolvida: (loja: ResultadoResolucaoLoja) => void;
-}) {
+export function ImportarNotaCard({ onDados }: { onDados: (dados: DadosImportados) => void }) {
   const [importando, setImportando] = useState(false);
   const [progresso, setProgresso] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
-  const [avisoLoja, setAvisoLoja] = useState<string | null>(null);
   const [textoLido, setTextoLido] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -46,25 +38,6 @@ export function ImportarNotaCard({
     }
 
     onDados(resultado);
-
-    if (!resultado.lojaNomeSugerida) return;
-    try {
-      const loja = await resolverOuCriarLojaAction(
-        resultado.lojaNomeSugerida,
-        resultado.lojaCnpjSugerido
-      );
-      if (!loja) return;
-      onLojaResolvida(loja);
-      setAvisoLoja(
-        loja.criada
-          ? `Loja "${loja.nome}" não estava cadastrada — cadastrei automaticamente.`
-          : null
-      );
-    } catch (e) {
-      console.error("Falha ao resolver/cadastrar loja da nota:", e);
-      // Não interrompe a importação: os outros campos já foram preenchidos,
-      // o admin pode escolher a loja manualmente na lista.
-    }
   }
 
   async function reconhecerImagem(arquivo: File): Promise<string> {
@@ -89,7 +62,6 @@ export function ImportarNotaCard({
   async function importarArquivo(arquivo: File) {
     setImportando(true);
     setErro(null);
-    setAvisoLoja(null);
     setTextoLido(null);
     setProgresso(null);
     try {
@@ -148,7 +120,6 @@ export function ImportarNotaCard({
   return (
     <div>
       {erro ? <Alerta tipo="erro">{erro}</Alerta> : null}
-      {avisoLoja ? <Alerta tipo="sucesso">{avisoLoja}</Alerta> : null}
       <div className="flex flex-wrap items-center gap-3">
         <input
           ref={inputRef}

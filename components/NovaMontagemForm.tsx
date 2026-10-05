@@ -7,10 +7,10 @@ import { ImportarNotaCard } from "@/components/ImportarNotaCard";
 import { NotasPendentesCard, type NotaPendenteResumo } from "@/components/NotasPendentesCard";
 import { SolicitacoesCard, type SolicitacaoResumo } from "@/components/SolicitacoesCard";
 import { resolverOuCriarLojaAction, type ResultadoResolucaoLoja } from "@/lib/actions/importar";
-import { pareceIdDoCentralSync } from "@/lib/centralsync";
+import { pareceIdDoCentralSync, veioDoCentralSync } from "@/lib/centralsync";
 import { formatarMoeda, paraInputDate, paraNumeroBr } from "@/lib/format";
 import { comprimirImagem, trocarArquivoDoInput } from "@/lib/imagem";
-import { VALOR_PARTICULAR_FORM } from "@/lib/servico";
+import { lancadaComoParticular, VALOR_PARTICULAR_FORM } from "@/lib/servico";
 import { TIPO_SERVICO_LABEL, TIPOS_SERVICO, tipoPeloPedido } from "@/lib/tipo-servico";
 import { PERIODO_LABEL, type PeriodoAgendamento } from "@/lib/validacao";
 
@@ -247,18 +247,21 @@ export function NovaMontagemForm({
     setLojaId(novoLojaId);
     setMontadorId(novoMontadorId);
     aplicarPercentualAssistencia(novoLojaId);
-    if (!percentualEditado && novoMontadorId) {
-      if (novoMontadorId === "ADM") {
-        setPercentual("0");
-        return;
-      }
-      const encontrado = comissoes.find(
-        (c) => c.lojaId === novoLojaId && c.montadorId === novoMontadorId
-      );
-      const montador = montadores.find((m) => m.id === novoMontadorId);
-      const comissao = encontrado ? encontrado.percentual : (montador?.comissaoPadrao ?? 0);
-      setPercentual(String(comissao));
+    aplicarComissao(novoLojaId, novoMontadorId);
+  }
+
+  // Comissão do montador naquela loja (ComissaoLoja) ou a padrão dele.
+  function aplicarComissao(lojaDaComissao: string, novoMontadorId: string) {
+    if (percentualEditado || !novoMontadorId) return;
+    if (novoMontadorId === "ADM") {
+      setPercentual("0");
+      return;
     }
+    const encontrado = comissoes.find(
+      (c) => c.lojaId === lojaDaComissao && c.montadorId === novoMontadorId
+    );
+    const montador = montadores.find((m) => m.id === novoMontadorId);
+    setPercentual(String(encontrado ? encontrado.percentual : (montador?.comissaoPadrao ?? 0)));
   }
 
   // readOnly (e não disabled): campo desabilitado não vai no FormData, e a
@@ -266,9 +269,26 @@ export function NovaMontagemForm({
   // disabled apagaria justamente o número que se quer proteger.
   const numeroTravado = pareceIdDoCentralSync(numeroPedido) && !numeroDestravado;
 
+  // Montagem nova lançada aqui (digitada ou importada) é particular; só o
+  // que veio do CentralSync -- e a montagem em loja -- leva loja. A mesma
+  // regra é aplicada no servidor (ver lancadaComoParticular).
+  const daIntegracao = Boolean(notaPendenteId) || veioDoCentralSync(numeroPedido);
+  const particularAutomatico =
+    !modoEdicao && lancadaComoParticular({ daIntegracao, tipoServico });
+  const lojaEfetiva = particularAutomatico ? VALOR_PARTICULAR_FORM : lojaId;
+
   // Serviço fechado direto com o cliente: não há loja para dividir a nota
   // nem assistência a cobrar dela, então a nota inteira é da empresa.
-  const ehParticular = lojaId === VALOR_PARTICULAR_FORM;
+  const ehParticular = lojaEfetiva === VALOR_PARTICULAR_FORM;
+
+  function trocarTipoServico(novoTipo: string) {
+    setTipoServico(novoTipo);
+    // Entrar ou sair de "Montagem em loja" troca a loja que vale (a
+    // escolhida ou nenhuma), e com ela a comissão do montador.
+    const particularDepois =
+      !modoEdicao && lancadaComoParticular({ daIntegracao, tipoServico: novoTipo });
+    aplicarComissao(particularDepois ? VALOR_PARTICULAR_FORM : lojaId, montadorId);
+  }
 
   // Montagem em loja: quem "recebe" o serviço é a própria loja, então
   // nome e endereço dela fazem as vezes dos do cliente.
@@ -323,10 +343,9 @@ export function NovaMontagemForm({
           </h2>
           <p className="mb-3 text-sm text-slate-500">
             Envie o XML da nota fiscal eletrônica, ou uma foto/imagem da nota
-            impressa (DANFE), para preencher o formulário automaticamente. Se
-            a loja da nota ainda não estiver cadastrada, o sistema cadastra
-            ela sozinho. Depois é só completar o que faltar e conferir os
-            dados antes de salvar.
+            impressa (DANFE), para preencher o formulário automaticamente.
+            Nota importada é lançada como serviço particular. Depois é só
+            completar o que faltar e conferir os dados antes de salvar.
           </p>
           <ImportarNotaCard
             onDados={(resultado) => {
@@ -338,7 +357,6 @@ export function NovaMontagemForm({
               if (resultado.valorServico) setValorServico(resultado.valorServico);
               if (resultado.notaUrl) setNotaUrl(resultado.notaUrl);
             }}
-            onLojaResolvida={aplicarLojaResolvida}
           />
         </Card>
       ) : null}
@@ -364,29 +382,54 @@ export function NovaMontagemForm({
           Loja e montador
         </h2>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Loja" hint="Serviço fechado direto com o cliente? Escolha “Serviço particular”.">
-            <Select
-              name="lojaId"
-              required
-              value={lojaId}
-              onChange={(e) => selecionarLojaOuMontador(e.target.value, montadorId)}
+          {particularAutomatico ? (
+            <div>
+              <span className="mb-1.5 block text-sm font-medium text-slate-700">Loja</span>
+              <input type="hidden" name="lojaId" value={VALOR_PARTICULAR_FORM} />
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+                <p className="font-semibold">Serviço particular</p>
+                <p className="mt-0.5 leading-snug">
+                  Lançada à mão: a nota inteira é da empresa, sem assistência. Só o que chega
+                  do CentralSync (Notas pendentes) é serviço de loja. Foi montagem dentro de
+                  uma loja? Escolha “Montagem em loja” no tipo de serviço.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <Field
+              label="Loja"
+              hint={
+                tipoServico === "MONTAGEM_LOJA" && !modoEdicao
+                  ? "A loja onde o serviço foi feito."
+                  : "Serviço fechado direto com o cliente? Escolha “Serviço particular”."
+              }
             >
-              <option value="">Selecione a loja</option>
-              <option value={VALOR_PARTICULAR_FORM}>
-                Serviço particular (sem loja)
-              </option>
-              {lojasDisponiveis.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.nome}
-                </option>
-              ))}
-            </Select>
-          </Field>
+              <Select
+                name="lojaId"
+                required
+                value={lojaId}
+                onChange={(e) => selecionarLojaOuMontador(e.target.value, montadorId)}
+              >
+                <option value="">Selecione a loja</option>
+                {tipoServico === "MONTAGEM_LOJA" && !modoEdicao ? null : (
+                  <option value={VALOR_PARTICULAR_FORM}>Serviço particular (sem loja)</option>
+                )}
+                {lojasDisponiveis.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.nome}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
           <Field label="Montador" hint="Você pode deixar em branco e atribuir depois.">
             <Select
               name="montadorId"
               value={montadorId}
-              onChange={(e) => selecionarLojaOuMontador(lojaId, e.target.value)}
+              onChange={(e) => {
+                setMontadorId(e.target.value);
+                aplicarComissao(lojaEfetiva, e.target.value);
+              }}
             >
               <option value="">A definir</option>
               <option value="ADM">A própria empresa (ADM)</option>
@@ -496,7 +539,7 @@ export function NovaMontagemForm({
               <Select
                 name="tipoServico"
                 value={tipoServico}
-                onChange={(e) => setTipoServico(e.target.value)}
+                onChange={(e) => trocarTipoServico(e.target.value)}
               >
                 {TIPOS_SERVICO.map((tipo) => (
                   <option key={tipo} value={tipo}>

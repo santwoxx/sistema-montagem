@@ -18,9 +18,10 @@ import {
   idDaEntregaNoCentralSync,
   nomeParaCentralSync,
   podeEnviarAoCentralSync,
+  veioDoCentralSync,
 } from "@/lib/centralsync";
 import { instanteLocal } from "@/lib/datas";
-import { lojaIdDoFormulario, nomeDaOrigem } from "@/lib/servico";
+import { lancadaComoParticular, lojaIdDoFormulario, nomeDaOrigem } from "@/lib/servico";
 import { lerTipoServico, tipoPeloPedido } from "@/lib/tipo-servico";
 import {
   OrigemEnvioSchema,
@@ -125,7 +126,6 @@ export async function criarMontagemAction(formData: FormData) {
   // valor bruto logo abaixo, para o formulário enviado vazio continuar
   // sendo recusado.
   const lojaIdBruto = String(formData.get("lojaId") || "").trim();
-  const lojaId = lojaIdDoFormulario(lojaIdBruto);
   const montadorIdBruto = String(formData.get("montadorId") || "");
   const feitoPorAdm = montadorIdBruto === "ADM";
   const montadorId = montadorIdBruto && montadorIdBruto !== "ADM" ? montadorIdBruto : null;
@@ -141,6 +141,22 @@ export async function criarMontagemAction(formData: FormData) {
   const tipoServico =
     lerTipoServico(formData.get("tipoServico")) ?? tipoPeloPedido(numeroPedido);
 
+  // Lançada no painel (digitada ou importada) é particular, seja qual for a
+  // loja que veio no formulário -- só o que chega do CentralSync é serviço
+  // de loja, além da montagem em loja (ver lancadaComoParticular). A nota
+  // pendente só existe para pedido que veio pela integração.
+  const daIntegracao = Boolean(notaPendenteId) || veioDoCentralSync(numeroPedido);
+  const particularAutomatico = lancadaComoParticular({ daIntegracao, tipoServico });
+  const lojaId = particularAutomatico ? null : lojaIdDoFormulario(lojaIdBruto);
+
+  if (tipoServico === "MONTAGEM_LOJA" && !lojaId) {
+    redirect(
+      `/admin/montagens/nova?erro=${encodeURIComponent(
+        "Montagem em loja precisa da loja onde o serviço foi feito."
+      )}`
+    );
+  }
+
   const valorServico = arredondar(paraNumero(formData.get("valorServico")));
   // Sem loja não há de quem cobrar assistência -- ela é o que a empresa
   // cobra da loja. Zerar aqui, e não só na tela, impede que um valor
@@ -151,7 +167,13 @@ export async function criarMontagemAction(formData: FormData) {
   const percentualMontador = paraPercentual(formData.get("percentualMontador"));
   const dataAgendada = paraData(formData.get("dataAgendada"));
 
-  if (!lojaIdBruto || !clienteNome || !clienteEndereco || !descricaoServico || valorServico <= 0) {
+  if (
+    (!particularAutomatico && !lojaIdBruto) ||
+    !clienteNome ||
+    !clienteEndereco ||
+    !descricaoServico ||
+    valorServico <= 0
+  ) {
     redirect(
       `/admin/montagens/nova?erro=${encodeURIComponent(
         "Preencha loja (ou marque serviço particular), cliente, endereço, serviço e um valor válido."

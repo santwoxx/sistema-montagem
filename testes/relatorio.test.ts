@@ -11,6 +11,7 @@ import {
   NOME_ADM,
   resumoPorLoja,
   resumoPorMontador,
+  resumoPorOrigem,
   resumoPorTipo,
   totalizar,
   VALOR_SO_LOJAS,
@@ -177,6 +178,25 @@ describe("contas do relatório", () => {
     expect(r.find((l) => l.particular)).toMatchObject({ devidoAEmpresa: 100, aReceber: 100 });
   });
 
+  it("separa serviço de loja de particular, só com as origens presentes", () => {
+    const r = resumoPorOrigem([
+      linha({ tipoServico: "MONTAGEM_LOJA", pagoPelaLoja: true }),
+      linha({ lojaId: null, loja: null, valorServico: 300, valorAssistencia: 0 }),
+      linha({ lojaId: null, loja: null, tipoServico: "ASSISTENCIA", valorServico: 50, valorAssistencia: 0 }),
+    ]);
+    expect(r.map((o) => o.origem)).toEqual(["loja", "particular"]);
+    expect(r[0]).toMatchObject({ quantidade: 1, receitaEmpresa: 10, aReceber: 0 });
+    expect(r[1]).toMatchObject({
+      quantidade: 2,
+      porTipo: { MONTAGEM: 1, ASSISTENCIA: 1, DESMONTAGEM: 0, MONTAGEM_LOJA: 0 },
+      receitaEmpresa: 350,
+      aReceber: 350,
+    });
+    expect(resumoPorOrigem([linha({ lojaId: null, loja: null })]).map((o) => o.origem)).toEqual([
+      "particular",
+    ]);
+  });
+
   it("lista por tipo, em ordem de data, sem os tipos vazios", () => {
     const lista = listaPorTipo(
       [
@@ -202,8 +222,14 @@ describe("planilha", () => {
     const celulas = primeira!.split(";");
     expect(celulas[0]).toBe("Montagem");
     expect(celulas[2]).toBe("05/10/2026");
-    expect(celulas[12]).toBe("1234,50");
-    expect(celulas[16]).toBe("Não");
+    expect(celulas[8]).toBe("Loja");
+    expect(celulas[13]).toBe("1234,50");
+    expect(celulas[17]).toBe("Não");
+    const particular = gerarPlanilha([linha({ lojaId: null, loja: null })], "cadastro");
+    expect(particular.split("\r\n")[1]!.split(";").slice(8, 10)).toEqual([
+      "Particular",
+      "Particular",
+    ]);
   });
 
   it("não deixa texto de fora virar fórmula nem quebrar colunas", () => {
