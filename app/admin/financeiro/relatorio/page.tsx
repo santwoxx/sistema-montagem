@@ -119,6 +119,9 @@ export default async function RelatorioPage({
   const porOrigem = resumoPorOrigem(linhas);
   const lista = listaPorTipo(linhas, filtros.base);
   const descricao = descreverFiltros(filtros, lojas, montadores);
+  // Relatório de uma loja só (ex.: o da Simonetti, que sai da pasta dela):
+  // o nome vai no título, para a folha impressa dizer de quem é.
+  const lojaDoRelatorio = lojas.find((l) => l.id === filtros.lojaId);
   const rotuloData = filtros.base === "conclusao" ? "Concluída em" : "Cadastrada em";
 
   return (
@@ -129,7 +132,7 @@ export default async function RelatorioPage({
         </Link>
       </p>
       <PageHeader
-        titulo="Relatório detalhado"
+        titulo={lojaDoRelatorio ? `Relatório — ${lojaDoRelatorio.nome}` : "Relatório detalhado"}
         descricao={descricao}
         acoes={
           <div className="flex flex-wrap gap-2 print:hidden">
@@ -297,7 +300,7 @@ export default async function RelatorioPage({
                 </p>
                 <p className="text-xs text-slate-500">
                   {o.origem === "loja"
-                    ? "A loja paga a empresa: 8% da nota + assistência."
+                    ? "A loja paga a empresa: o acerto dela sobre a nota + assistência."
                     : "Lançados à mão: o cliente paga a nota inteira à empresa."}
                 </p>
                 <p className="mt-3 text-3xl font-bold tracking-tight text-gray-900">
@@ -395,7 +398,15 @@ export default async function RelatorioPage({
               <tbody>
                 {porLoja.map((l) => (
                   <tr key={l.chave} className="border-b border-slate-100 last:border-0">
-                    <td className={`${TD} font-medium text-gray-900`}>{l.nome}</td>
+                    <td className={`${TD} font-medium text-gray-900`}>
+                      {l.particular ? (
+                        l.nome
+                      ) : (
+                        <Link href={`/admin/lojas/${l.chave}`} className="hover:underline">
+                          {l.nome}
+                        </Link>
+                      )}
+                    </td>
                     {tiposVisiveis.map((t) => (
                       <td key={t} className={`${TD} text-right text-slate-700`}>
                         {l.porTipo[t] || "–"}
@@ -506,7 +517,8 @@ export default async function RelatorioPage({
 
           <p className="text-xs text-slate-500">
             “Empresa” é a receita da empresa em cada serviço, com as mesmas contas do Financeiro:
-            8% da nota mais a assistência nos serviços de loja, e a nota inteira nos particulares.
+            o acerto da loja sobre a nota mais a assistência nos serviços de loja, e a nota inteira
+            nos particulares.
             Gerado em {formatarData(new Date())}.
           </p>
         </>

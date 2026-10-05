@@ -83,6 +83,15 @@ model Loja {
   // digitado no painel é serviço particular e não volta para a loja (ver
   // podeEnviarAoCentralSync em lib/centralsync.ts).
   integraCentralSync Boolean @default(false)
+  // Quanto a empresa fica do valor da nota nos serviços desta loja (o
+  // "acerto"). Era 8% fixo para toda loja; agora cada uma tem o seu, e cada
+  // montagem guarda o percentual do momento em que foi lançada
+  // (Montagem.percentualAcerto) -- mudar aqui não reescreve conta antiga.
+  percentualAcerto Float @default(8)
+  // Loja parceira sem integração: os serviços dela são lançados à mão no
+  // painel e continuam sendo dela. Sem isto, montagem lançada à mão nasce
+  // particular (ver lancadaComoParticular em lib/servico.ts).
+  lancamentoManual Boolean @default(false)
 
   comissoes ComissaoLoja[]
   montagens Montagem[]
@@ -130,6 +139,10 @@ model Montagem {
   // Loja.percentualAssistencia no momento em que a montagem é criada.
   percentualAssistencia Float @default(0)
   valorAssistencia   Float @default(0)
+  // O acerto da loja (Loja.percentualAcerto) no momento do lançamento. O
+  // valor é calculado na hora (lib/financeiro.ts), como sempre foi com os
+  // 8%. Padrão 8: é o que valia para toda montagem antes de existir.
+  percentualAcerto   Float @default(8)
   feitoPorAdm        Boolean @default(false)
 
   dataAgendada DateTime?

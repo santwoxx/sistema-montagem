@@ -8,7 +8,7 @@
 // que o banco aceitaria e cada tela interpretaria de um jeito.
 //
 // O que muda no dinheiro está em lib/financeiro.ts: sem loja não existe
-// acerto de 8% nem assistência, então o valor da nota é receita cheia da
+// acerto nem assistência, então o valor da nota é receita cheia da
 // empresa.
 
 import type { Prisma, TipoServico } from "@prisma/client";
@@ -79,7 +79,10 @@ export function lojaIdDoFormulario(valor: string): string | null {
  * loja que aparece na nota fiscal, e a montagem entrava no financeiro como
  * 8% + assistência de uma loja que não tinha nada a ver com o serviço.
  *
- * A exceção é a montagem em loja (mostruário): ali a loja é a cliente.
+ * As exceções: a montagem em loja (mostruário), em que a loja é a
+ * cliente; e a loja parceira sem integração (Loja.lancamentoManual, ex.:
+ * Simonetti), cujos serviços só chegam lançados à mão e precisam continuar
+ * na pasta dela.
  *
  * Vale só para montagem nova -- as antigas ficam como foram lançadas, e
  * editar uma montagem continua deixando escolher a loja.
@@ -87,6 +90,60 @@ export function lojaIdDoFormulario(valor: string): string | null {
 export function lancadaComoParticular(montagem: {
   daIntegracao: boolean;
   tipoServico: TipoServico | string;
+  /** Se a loja escolhida é parceira com lançamento manual. */
+  lojaLancamentoManual?: boolean;
 }): boolean {
-  return !montagem.daIntegracao && montagem.tipoServico !== "MONTAGEM_LOJA";
+  return (
+    !montagem.daIntegracao &&
+    montagem.tipoServico !== "MONTAGEM_LOJA" &&
+    !montagem.lojaLancamentoManual
+  );
+}
+
+function normalizarNome(texto: string) {
+  return texto
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/**
+ * A loja parceira (lançamento manual) que emitiu a nota fiscal importada,
+ * se houver: pelo CNPJ, ou pelo nome da loja aparecendo no nome do emitente
+ * ("Simonetti" em "SIMONETTI COMERCIO DE MOVEIS LTDA"). Só procura entre as
+ * parceiras -- nota de qualquer outra loja continua sendo particular.
+ */
+export function acharLojaParceira<
+  L extends { nome: string; cnpj?: string | null; lancamentoManual?: boolean },
+>(lojas: L[], emitente: { nome?: string | null; cnpj?: string | null }): L | null {
+  const parceiras = lojas.filter((l) => l.lancamentoManual);
+  const cnpj = String(emitente.cnpj ?? "").replace(/\D/g, "");
+  if (cnpj.length === 14) {
+    const peloCnpj = parceiras.find((l) => String(l.cnpj ?? "").replace(/\D/g, "") === cnpj);
+    if (peloCnpj) return peloCnpj;
+  }
+  const nome = ` ${normalizarNome(emitente.nome ?? "")} `;
+  if (!nome.trim()) return null;
+  return (
+    parceiras.find((l) => {
+      const palavras = palavrasQueIdentificam(l.nome);
+      return palavras.length > 0 && palavras.every((p) => nome.includes(` ${p} `));
+    }) ?? null
+  );
+}
+
+// Palavras que aparecem no nome de qualquer loja e não dizem qual é: o
+// cadastro diz "Simonetti Móveis" e a nota diz "SIMONETTI COMERCIO DE
+// MOVEIS LTDA" -- o que precisa bater é o "simonetti".
+const PALAVRAS_GENERICAS = new Set([
+  "moveis", "movel", "loja", "lojas", "comercio", "comercial", "ltda", "eireli",
+  "me", "epp", "sa", "de", "da", "do", "das", "dos", "e", "filial", "matriz",
+]);
+
+function palavrasQueIdentificam(nomeDaLoja: string) {
+  return normalizarNome(nomeDaLoja)
+    .split(" ")
+    .filter((p) => p.length >= 3 && !PALAVRAS_GENERICAS.has(p));
 }

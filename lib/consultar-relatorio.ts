@@ -34,6 +34,7 @@ export async function buscarLinhasDoRelatorio(
       valorServico: true,
       valorMontador: true,
       valorAssistencia: true,
+      percentualAcerto: true,
       lojaId: true,
       montadorId: true,
       pagoPelaLoja: true,

@@ -83,6 +83,21 @@ export function lerFiltrosRelatorio(params: Parametros, agora = new Date()): Fil
   };
 }
 
+/**
+ * Nome do arquivo da planilha. Com uma loja escolhida, o nome dela vai no
+ * arquivo -- "relatorio-simonetti-2026-10-01-a-2026-10-31.csv" -- para as
+ * planilhas de cada loja não se misturarem na pasta de downloads.
+ */
+export function nomeDaPlanilha(f: FiltrosRelatorio, nomeDaLoja?: string | null) {
+  const loja = String(nomeDaLoja ?? "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return `relatorio-${loja ? `${loja}-` : ""}${f.de}-a-${f.ate}.csv`;
+}
+
 /** Os filtros de volta em parâmetros de URL (para o link da planilha). */
 export function filtrosParaUrl(f: FiltrosRelatorio): string {
   const p = new URLSearchParams({ de: f.de, ate: f.ate, base: f.base, situacao: f.situacao });
@@ -141,6 +156,7 @@ export type LinhaRelatorio = {
   valorServico: number;
   valorMontador: number;
   valorAssistencia: number;
+  percentualAcerto: number;
   lojaId: string | null;
   montadorId: string | null;
   pagoPelaLoja: boolean;

@@ -6,11 +6,20 @@ import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth";
 import { normalizarCnpj, ehErroCnpjDuplicado } from "@/lib/cnpj";
 import { paraNumeroBr } from "@/lib/format";
+import { PERCENTUAL_ACERTO_PADRAO } from "@/lib/financeiro";
 
 function paraPercentual(valor: FormDataEntryValue | null) {
   const numero = paraNumeroBr(String(valor ?? ""));
   if (!Number.isFinite(numero) || numero < 0) return 0;
   return numero > 100 ? 100 : numero;
+}
+
+// O acerto (quanto a empresa fica da nota). Campo ausente vale o padrão,
+// não zero: um formulário antigo aberto antes do campo existir não pode
+// cadastrar uma loja que não paga nada.
+function lerAcerto(formData: FormData) {
+  const valor = formData.get("percentualAcerto");
+  return valor === null ? PERCENTUAL_ACERTO_PADRAO : paraPercentual(valor);
 }
 
 export async function criarLojaAction(formData: FormData) {
@@ -24,6 +33,8 @@ export async function criarLojaAction(formData: FormData) {
   // Libera o envio da conclusão para o CentralSync nas montagens lançadas à
   // mão desta loja (ver lib/centralsync.ts).
   const integraCentralSync = formData.get("integraCentralSync") === "on";
+  const percentualAcerto = lerAcerto(formData);
+  const lancamentoManual = formData.get("lancamentoManual") === "on";
 
   if (!nome) {
     redirect(`/admin/lojas?erro=${encodeURIComponent("Informe o nome da loja.")}`);
@@ -38,6 +49,8 @@ export async function criarLojaAction(formData: FormData) {
         cnpj,
         percentualAssistencia,
         integraCentralSync,
+        percentualAcerto,
+        lancamentoManual,
       },
     });
   } catch (error) {
@@ -65,6 +78,8 @@ export async function atualizarLojaAction(id: string, formData: FormData) {
   const ativo = formData.get("ativo") === "on";
   const percentualAssistencia = paraPercentual(formData.get("percentualAssistencia"));
   const integraCentralSync = formData.get("integraCentralSync") === "on";
+  const percentualAcerto = lerAcerto(formData);
+  const lancamentoManual = formData.get("lancamentoManual") === "on";
 
   if (!nome) {
     redirect(
@@ -83,6 +98,8 @@ export async function atualizarLojaAction(id: string, formData: FormData) {
         ativo,
         percentualAssistencia,
         integraCentralSync,
+        percentualAcerto,
+        lancamentoManual,
       },
     });
   } catch (error) {
@@ -95,6 +112,7 @@ export async function atualizarLojaAction(id: string, formData: FormData) {
   }
 
   revalidatePath("/admin/lojas");
+  revalidatePath(`/admin/lojas/${id}`);
   redirect(`/admin/lojas?sucesso=${encodeURIComponent("Loja atualizada.")}`);
 }
 

@@ -448,6 +448,7 @@ export default async function MontagemDetalhePage({
             tipoServico: montagem.tipoServico,
             valorServico: String(montagem.valorServico),
             percentualAssistencia: String(montagem.percentualAssistencia),
+            percentualAcerto: String(montagem.percentualAcerto),
             percentualMontador: String(montagem.percentualMontador),
             dataAgendada: paraInputDate(montagem.dataAgendada),
             observacoes: montagem.observacoes ?? "",

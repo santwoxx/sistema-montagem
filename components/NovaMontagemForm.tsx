@@ -10,7 +10,8 @@ import { resolverOuCriarLojaAction, type ResultadoResolucaoLoja } from "@/lib/ac
 import { pareceIdDoCentralSync, veioDoCentralSync } from "@/lib/centralsync";
 import { formatarMoeda, paraInputDate, paraNumeroBr } from "@/lib/format";
 import { comprimirImagem, trocarArquivoDoInput } from "@/lib/imagem";
-import { lancadaComoParticular, VALOR_PARTICULAR_FORM } from "@/lib/servico";
+import { PERCENTUAL_ACERTO_PADRAO } from "@/lib/financeiro";
+import { acharLojaParceira, lancadaComoParticular, VALOR_PARTICULAR_FORM } from "@/lib/servico";
 import { TIPO_SERVICO_LABEL, TIPOS_SERVICO, tipoPeloPedido } from "@/lib/tipo-servico";
 import { PERIODO_LABEL, type PeriodoAgendamento } from "@/lib/validacao";
 
@@ -40,6 +41,9 @@ type Loja = {
   id: string;
   nome: string;
   percentualAssistencia?: number;
+  percentualAcerto?: number;
+  lancamentoManual?: boolean;
+  cnpj?: string | null;
   endereco?: string | null;
   telefone?: string | null;
 };
@@ -73,6 +77,7 @@ export function NovaMontagemForm({
     tipoServico?: string;
     valorServico?: string;
     percentualAssistencia?: string;
+    percentualAcerto?: string;
     percentualMontador?: string;
     dataAgendada?: string;
     observacoes?: string;
@@ -93,6 +98,12 @@ export function NovaMontagemForm({
     valoresIniciais?.percentualAssistencia ?? "0"
   );
   const [percentualAssistenciaEditado, setPercentualAssistenciaEditado] = useState(false);
+  const [percentualAcerto, setPercentualAcerto] = useState(
+    valoresIniciais?.percentualAcerto ?? String(PERCENTUAL_ACERTO_PADRAO)
+  );
+  const [percentualAcertoEditado, setPercentualAcertoEditado] = useState(false);
+  // Aviso de que a nota importada foi reconhecida como de uma loja parceira.
+  const [avisoParceira, setAvisoParceira] = useState<string | null>(null);
 
   const [clienteNome, setClienteNome] = useState(valoresIniciais?.clienteNome ?? "");
   const [clienteTelefone, setClienteTelefone] = useState(valoresIniciais?.clienteTelefone ?? "");
@@ -237,10 +248,17 @@ export function NovaMontagemForm({
   // percentual é fixo por loja (Loja.percentualAssistencia), não varia por
   // montador, e é sempre recalculado no servidor a partir do valor do
   // serviço (ver criarMontagemAction/atualizarMontagemAction).
+  //
+  // O acerto (quanto a empresa fica da nota) segue o mesmo caminho: vem do
+  // cadastro da loja (Loja.percentualAcerto) e pode ser ajustado aqui.
   function aplicarPercentualAssistencia(novoLojaId: string) {
-    if (percentualAssistenciaEditado) return;
     const loja = lojasDisponiveis.find((l) => l.id === novoLojaId);
-    setPercentualAssistencia(String(loja?.percentualAssistencia ?? 0));
+    if (!percentualAssistenciaEditado) {
+      setPercentualAssistencia(String(loja?.percentualAssistencia ?? 0));
+    }
+    if (!percentualAcertoEditado && loja) {
+      setPercentualAcerto(String(loja.percentualAcerto ?? PERCENTUAL_ACERTO_PADRAO));
+    }
   }
 
   function selecionarLojaOuMontador(novoLojaId: string, novoMontadorId: string) {
@@ -272,10 +290,17 @@ export function NovaMontagemForm({
   // Montagem nova lançada aqui (digitada ou importada) é particular; só o
   // que veio do CentralSync -- e a montagem em loja -- leva loja. A mesma
   // regra é aplicada no servidor (ver lancadaComoParticular).
+  // No lançamento à mão só valem "particular" e as lojas parceiras sem
+  // integração (Loja.lancamentoManual, ex.: Simonetti).
   const daIntegracao = Boolean(notaPendenteId) || veioDoCentralSync(numeroPedido);
-  const particularAutomatico =
-    !modoEdicao && lancadaComoParticular({ daIntegracao, tipoServico });
-  const lojaEfetiva = particularAutomatico ? VALOR_PARTICULAR_FORM : lojaId;
+  const lojasParceiras = lojasDisponiveis.filter((l) => l.lancamentoManual);
+  const lancamentoManual = !modoEdicao && lancadaComoParticular({ daIntegracao, tipoServico });
+  function lojaQueVale(tipo: string, loja: string) {
+    const manual = !modoEdicao && lancadaComoParticular({ daIntegracao, tipoServico: tipo });
+    if (!manual) return loja;
+    return lojasParceiras.some((l) => l.id === loja) ? loja : VALOR_PARTICULAR_FORM;
+  }
+  const lojaEfetiva = lojaQueVale(tipoServico, lojaId);
 
   // Serviço fechado direto com o cliente: não há loja para dividir a nota
   // nem assistência a cobrar dela, então a nota inteira é da empresa.
@@ -285,9 +310,7 @@ export function NovaMontagemForm({
     setTipoServico(novoTipo);
     // Entrar ou sair de "Montagem em loja" troca a loja que vale (a
     // escolhida ou nenhuma), e com ela a comissão do montador.
-    const particularDepois =
-      !modoEdicao && lancadaComoParticular({ daIntegracao, tipoServico: novoTipo });
-    aplicarComissao(particularDepois ? VALOR_PARTICULAR_FORM : lojaId, montadorId);
+    aplicarComissao(lojaQueVale(novoTipo, lojaId), montadorId);
   }
 
   // Montagem em loja: quem "recebe" o serviço é a própria loja, então
@@ -313,6 +336,11 @@ export function NovaMontagemForm({
     const p = paraNumeroBr(percentualAssistencia) || 0;
     return (valorServicoCalculado * p) / 100;
   }, [valorServicoCalculado, percentualAssistencia]);
+
+  const valorAcertoCalculado = useMemo(() => {
+    const p = paraNumeroBr(percentualAcerto) || 0;
+    return (valorServicoCalculado * p) / 100;
+  }, [valorServicoCalculado, percentualAcerto]);
 
   return (
     <form
@@ -356,8 +384,25 @@ export function NovaMontagemForm({
               if (resultado.descricaoServico) setDescricaoServico(resultado.descricaoServico);
               if (resultado.valorServico) setValorServico(resultado.valorServico);
               if (resultado.notaUrl) setNotaUrl(resultado.notaUrl);
+              // Nota emitida por uma loja parceira (ex.: Simonetti) já vai
+              // para a pasta dela; de qualquer outra loja, fica particular.
+              const parceira = acharLojaParceira(lojasDisponiveis, {
+                nome: resultado.lojaNomeSugerida,
+                cnpj: resultado.lojaCnpjSugerido,
+              });
+              if (parceira) {
+                selecionarLojaOuMontador(parceira.id, montadorId);
+                setAvisoParceira(`Nota da ${parceira.nome}: lançada na pasta dela.`);
+              } else {
+                setAvisoParceira(null);
+              }
             }}
           />
+          {avisoParceira ? (
+            <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-900">
+              {avisoParceira}
+            </p>
+          ) : null}
         </Card>
       ) : null}
       
@@ -382,7 +427,28 @@ export function NovaMontagemForm({
           Loja e montador
         </h2>
         <div className="grid gap-4 sm:grid-cols-2">
-          {particularAutomatico ? (
+          {lancamentoManual && lojasParceiras.length > 0 ? (
+            <Field
+              label="Loja"
+              hint="Lançada à mão é serviço particular, a não ser que seja de uma loja parceira. Pedidos da Central Móveis chegam pelo CentralSync."
+            >
+              <Select
+                name="lojaId"
+                value={lojaEfetiva}
+                onChange={(e) => {
+                  setAvisoParceira(null);
+                  selecionarLojaOuMontador(e.target.value, montadorId);
+                }}
+              >
+                <option value={VALOR_PARTICULAR_FORM}>Serviço particular (sem loja)</option>
+                {lojasParceiras.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.nome} (loja parceira)
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          ) : lancamentoManual ? (
             <div>
               <span className="mb-1.5 block text-sm font-medium text-slate-700">Loja</span>
               <input type="hidden" name="lojaId" value={VALOR_PARTICULAR_FORM} />
@@ -644,12 +710,38 @@ export function NovaMontagemForm({
               disabled={ehParticular}
             />
           </Field>
+          <Field
+            label="Acerto da loja (%)"
+            hint={
+              ehParticular
+                ? "Não se aplica: no serviço particular a nota inteira é da empresa."
+                : "Quanto a empresa fica do valor da nota. Vem do cadastro da loja. Pode ajustar."
+            }
+          >
+            <Input
+              type="text"
+              inputMode="decimal"
+              name="percentualAcerto"
+              value={ehParticular ? "0" : percentualAcerto}
+              onChange={(e) => {
+                setPercentualAcerto(e.target.value);
+                setPercentualAcertoEditado(true);
+              }}
+              disabled={ehParticular}
+            />
+          </Field>
         </div>
         <div className="mt-4 grid gap-4 sm:grid-cols-3">
           <StatCard
             titulo={ehParticular ? "Valor cobrado do cliente" : "Valor a receber (desta nota)"}
-            valor={formatarMoeda(valorServicoCalculado)}
-            sub={ehParticular ? "Fica inteiro com a empresa" : "O que a loja deve pela montagem"}
+            valor={formatarMoeda(
+              ehParticular ? valorServicoCalculado : valorAcertoCalculado + valorAssistenciaCalculado
+            )}
+            sub={
+              ehParticular
+                ? "Fica inteiro com a empresa"
+                : `O que a loja deve: acerto de ${percentualAcerto || 0}% + assistência`
+            }
             cor="text-emerald-600"
             icone={ehParticular ? "🤝" : "🏬"}
           />

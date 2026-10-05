@@ -15,7 +15,7 @@ individual para cada montador.
   sem loja no meio. Em "Nova montagem", escolha "Serviço particular (sem
   loja)" no campo Loja. Nesses casos não existe assistência (que é o que a
   empresa cobra da loja) e o valor cobrado fica inteiro com a empresa, em
-  vez dos 8% de acerto — o financeiro separa as duas frentes.
+  vez do acerto da loja — o financeiro separa as duas frentes.
 - Divulga um **link público de agendamento** para o cliente preencher os
   próprios dados (ver a seção sobre ele mais abaixo).
 - Importa uma nota fiscal para preencher uma montagem nova sozinho: aceita o
@@ -236,7 +236,7 @@ O que muda no dinheiro:
 | | Serviço de loja | Serviço particular |
 | --- | --- | --- |
 | Quem paga a empresa | a loja | o próprio cliente |
-| Receita da empresa | 8% da nota + assistência | **o valor cheio** |
+| Receita da empresa | acerto da loja (8% por padrão) + assistência | **o valor cheio** |
 | Assistência | conforme o cadastro da loja | não se aplica (gravada como 0) |
 | Comissão do montador | igual | igual |
 
@@ -259,10 +259,29 @@ regra está em `lancadaComoParticular` (`lib/servico.ts`), aplicada no
 formulário e no servidor; vale para montagem nova — editar uma montagem
 continua deixando escolher a loja.
 
-O relatório detalhado (Financeiro → Relatório detalhado) mostra as duas
-frentes no bloco "Loja x particular", além da quebra por tipo de serviço
-(montagem, assistência, desmontagem, montagem em loja), por montador e por
-loja.
+**Loja parceira com lançamento manual** (ex.: Simonetti). Loja sem
+integração cujos serviços chegam lançados à mão é marcada assim no cadastro
+(Lojas → "Loja parceira com lançamento manual"). Para ela, a nota lançada à
+mão continua sendo da loja; no formulário, o campo Loja oferece "Serviço
+particular" e as lojas parceiras. Nota fiscal importada com o CNPJ (ou o nome)
+de uma parceira já é lançada nela sozinha (`acharLojaParceira`).
+
+**Acerto por loja.** O percentual que a empresa fica da nota deixou de ser
+8% fixo: cada loja tem o seu ("Acerto da empresa (%)" no cadastro; 100 =
+a loja paga a montagem inteira), e cada montagem guarda o do momento em que
+foi lançada (`percentualAcerto`), ajustável no formulário como a
+assistência. Mudar o acerto da loja não reescreve as montagens já lançadas.
+
+**Pasta da loja** (Lojas → "Abrir pasta"): identificação, como os serviços
+chegam, acerto, o que falta receber, o mês por tipo de serviço, o que está
+em aberto e o que já foi concluído (com comprovante e pagamento), com
+atalhos para o relatório e a lista completa da loja.
+
+O relatório detalhado (Financeiro → Relatório detalhado, ou "Relatório da
+loja" na pasta) mostra as duas frentes no bloco "Loja x particular", além da
+quebra por tipo de serviço (montagem, assistência, desmontagem, montagem em
+loja), por montador e por loja. Com uma loja escolhida, o nome dela vai no
+título e no arquivo da planilha.
 
 ## Integração com o CentralSync (loja Central Móveis)
 

@@ -76,6 +76,7 @@ export default async function FinanceiroPage({
       valorServico: true,
       valorMontador: true,
       valorAssistencia: true,
+      percentualAcerto: true,
       pagoPelaLoja: true,
       pagoAoMontador: true,
       loja: { select: { nome: true } },
@@ -194,7 +195,7 @@ export default async function FinanceiroPage({
         <StatCard
           titulo="Receita da empresa"
           valor={formatarMoeda(receitaEmpresa)}
-          sub="8% das notas de loja + assistências + particulares cheios"
+          sub="Acerto das lojas + assistências + particulares cheios"
           icone="🏢"
         />
         <StatCard

@@ -1,9 +1,14 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { criarLojaAction, atualizarLojaAction, excluirLojaAction } from "@/lib/actions/lojas";
 import { Alerta, Badge, Button, Card, Field, Input, PageHeader, Vazio } from "@/components/ui";
 import { FormConfirmar } from "@/components/FormConfirmar";
 import { SubmitButton } from "@/components/SubmitButton";
+import { PERCENTUAL_ACERTO_PADRAO } from "@/lib/financeiro";
 import { formatarCnpj } from "@/lib/format";
+
+const AJUDA_LANCAMENTO_MANUAL =
+  "Para loja sem integração (ex.: Simonetti): a nota lançada à mão para ela fica na pasta dela, em vez de virar serviço particular. Nota fiscal importada com o CNPJ ou o nome desta loja já é lançada nela sozinha.";
 
 export default async function LojasPage({
   searchParams,
@@ -56,6 +61,32 @@ export default async function LojasPage({
           >
             <Input type="number" name="percentualAssistencia" min={0} max={100} step="0.5" defaultValue={0} />
           </Field>
+          <Field
+            label="Acerto da empresa (%)"
+            hint="Quanto a empresa fica do valor da nota nos serviços desta loja. Use 100 se a loja paga a montagem inteira."
+          >
+            <Input
+              type="number"
+              name="percentualAcerto"
+              min={0}
+              max={100}
+              step="0.5"
+              defaultValue={PERCENTUAL_ACERTO_PADRAO}
+            />
+          </Field>
+          <label className="flex items-start gap-2 text-sm text-gray-700 sm:col-span-2">
+            <input
+              type="checkbox"
+              name="lancamentoManual"
+              className="mt-0.5 h-4 w-4 rounded border-gray-300"
+            />
+            <span>
+              Loja parceira com lançamento manual
+              <span className="block text-xs text-gray-500">
+                {AJUDA_LANCAMENTO_MANUAL}
+              </span>
+            </span>
+          </label>
           <label className="flex items-start gap-2 text-sm text-gray-700 sm:col-span-2">
             <input
               type="checkbox"
@@ -96,14 +127,30 @@ export default async function LojasPage({
                       {loja.telefone || "Sem telefone"}
                       {loja.endereco ? ` · ${loja.endereco}` : ""}
                       {loja.cnpj ? ` · CNPJ ${formatarCnpj(loja.cnpj)}` : ""}
+                      {` · Acerto ${loja.percentualAcerto}%`}
                       {loja.percentualAssistencia ? ` · Assistência ${loja.percentualAssistencia}%` : ""}
-                      {loja.integraCentralSync ? " · CentralSync" : ""}
                     </p>
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {loja.integraCentralSync ? (
+                        <Badge className="bg-indigo-100 text-indigo-800">CentralSync</Badge>
+                      ) : null}
+                      {loja.lancamentoManual ? (
+                        <Badge className="bg-amber-100 text-amber-800">
+                          Parceira · lançamento manual
+                        </Badge>
+                      ) : null}
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-gray-400">
                       {loja._count.montagens} montagem(ns)
                     </span>
+                    <Link
+                      href={`/admin/lojas/${loja.id}`}
+                      className="text-sm font-medium text-navy hover:underline"
+                    >
+                      Abrir pasta
+                    </Link>
                     <Badge
                       className={
                         loja.ativo
@@ -154,6 +201,33 @@ export default async function LojasPage({
                       defaultValue={loja.percentualAssistencia}
                     />
                   </Field>
+                  <Field
+                    label="Acerto da empresa (%)"
+                    hint="Quanto a empresa fica do valor da nota (100 = a loja paga a montagem inteira). Vale para as montagens lançadas daqui em diante."
+                  >
+                    <Input
+                      type="number"
+                      name="percentualAcerto"
+                      min={0}
+                      max={100}
+                      step="0.5"
+                      defaultValue={loja.percentualAcerto}
+                    />
+                  </Field>
+                  <label className="flex items-start gap-2 text-sm text-gray-700 sm:col-span-2">
+                    <input
+                      type="checkbox"
+                      name="lancamentoManual"
+                      defaultChecked={loja.lancamentoManual}
+                      className="mt-0.5 h-4 w-4 rounded border-gray-300"
+                    />
+                    <span>
+                      Loja parceira com lançamento manual
+                      <span className="block text-xs text-gray-500">
+                        {AJUDA_LANCAMENTO_MANUAL}
+                      </span>
+                    </span>
+                  </label>
                   <label className="flex items-center gap-2 text-sm text-gray-700 sm:col-span-2">
                     <input
                       type="checkbox"

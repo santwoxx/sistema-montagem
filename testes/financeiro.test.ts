@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   emCentavos,
-  PERCENTUAL_EMPRESA,
+  PERCENTUAL_ACERTO_PADRAO,
   receitaDaEmpresa,
   somarDinheiro,
   somarReceitaDaEmpresa,
@@ -12,16 +12,25 @@ import {
 describe("regras de dinheiro", () => {
   it("cobra da loja o acerto padrão mais a assistência", () => {
     // 1000 * 8% = 80, mais 20 de assistência.
-    expect(valorDevidoPelaLoja({ valorServico: 1000, valorAssistencia: 20 })).toBe(100);
+    expect(valorDevidoPelaLoja({ valorServico: 1000, valorAssistencia: 20, percentualAcerto: 8 })).toBe(100);
   });
 
   it("trata assistência ausente como zero", () => {
-    expect(valorDevidoPelaLoja({ valorServico: 250, valorAssistencia: null })).toBe(20);
-    expect(valorDevidoPelaLoja({ valorServico: 250 })).toBe(20);
+    expect(valorDevidoPelaLoja({ valorServico: 250, valorAssistencia: null, percentualAcerto: 8 })).toBe(20);
+    expect(valorDevidoPelaLoja({ valorServico: 250, percentualAcerto: 8 })).toBe(20);
   });
 
-  it("mantém o percentual da empresa num lugar só", () => {
-    expect(PERCENTUAL_EMPRESA).toBe(0.08);
+  it("usa 8% como acerto de uma loja nova", () => {
+    expect(PERCENTUAL_ACERTO_PADRAO).toBe(8);
+  });
+
+  it("usa o acerto de cada montagem, não um percentual fixo", () => {
+    // Loja que paga a montagem inteira (acerto de 100%).
+    expect(valorDevidoPelaLoja({ valorServico: 300, valorAssistencia: 0, percentualAcerto: 100 })).toBe(300);
+    // Loja com acerto de 10% e 2% de assistência.
+    expect(valorDevidoPelaLoja({ valorServico: 1000, valorAssistencia: 20, percentualAcerto: 10 })).toBe(120);
+    // Sem acerto: só a assistência.
+    expect(valorDevidoPelaLoja({ valorServico: 1000, valorAssistencia: 20, percentualAcerto: 0 })).toBe(20);
   });
 
   it("não deixa sobra de ponto flutuante aparecer no total", () => {
@@ -44,9 +53,9 @@ describe("regras de dinheiro", () => {
     // 100,00): a diferença de um centavo é o arredondamento das parcelas,
     // e é ela que faz a cobrança bater com o extrato item a item.
     const linhas = [
-      { valorServico: 333.33, valorAssistencia: 6.67 },
-      { valorServico: 333.33, valorAssistencia: 6.67 },
-      { valorServico: 333.34, valorAssistencia: 6.66 },
+      { valorServico: 333.33, valorAssistencia: 6.67, percentualAcerto: 8 },
+      { valorServico: 333.33, valorAssistencia: 6.67, percentualAcerto: 8 },
+      { valorServico: 333.34, valorAssistencia: 6.66, percentualAcerto: 8 },
     ];
 
     expect(linhas.map(valorDevidoPelaLoja)).toEqual([33.34, 33.34, 33.33]);
@@ -55,8 +64,8 @@ describe("regras de dinheiro", () => {
 
   it("devolve sempre um valor já fechado em centavos", () => {
     const total = somarValorDevidoPelaLoja([
-      { valorServico: 1234.56, valorAssistencia: 7.89 },
-      { valorServico: 99.99, valorAssistencia: null },
+      { valorServico: 1234.56, valorAssistencia: 7.89, percentualAcerto: 8 },
+      { valorServico: 99.99, valorAssistencia: null, percentualAcerto: 8 },
     ]);
     expect(total).toBe(emCentavos(total));
   });
@@ -64,13 +73,13 @@ describe("regras de dinheiro", () => {
 
 describe("receita de serviço particular", () => {
   it("fica com a nota inteira quando não há loja", () => {
-    // Sem loja não existe acerto de 8%: quem paga é o cliente, direto.
-    expect(receitaDaEmpresa({ valorServico: 400, lojaId: null })).toBe(400);
+    // Sem loja não existe acerto: quem paga é o cliente, direto.
+    expect(receitaDaEmpresa({ valorServico: 400, percentualAcerto: 8, lojaId: null })).toBe(400);
   });
 
   it("continua cobrando só o acerto quando há loja", () => {
     expect(
-      receitaDaEmpresa({ valorServico: 1000, valorAssistencia: 20, lojaId: "loja-1" })
+      receitaDaEmpresa({ valorServico: 1000, valorAssistencia: 20, percentualAcerto: 8, lojaId: "loja-1" })
     ).toBe(100);
   });
 
@@ -78,8 +87,8 @@ describe("receita de serviço particular", () => {
     // 8% de 1000 = 80, mais o particular cheio de 400.
     expect(
       somarReceitaDaEmpresa([
-        { valorServico: 1000, lojaId: "loja-1" },
-        { valorServico: 400, lojaId: null },
+        { valorServico: 1000, percentualAcerto: 8, lojaId: "loja-1" },
+        { valorServico: 400, percentualAcerto: 8, lojaId: null },
       ])
     ).toBe(480);
   });
@@ -89,7 +98,7 @@ describe("receita de serviço particular", () => {
     // se tiver, ela não pode ser somada por fora do valor: o cliente pagou
     // a nota, e só.
     expect(
-      receitaDaEmpresa({ valorServico: 400, valorAssistencia: 50, lojaId: null })
+      receitaDaEmpresa({ valorServico: 400, valorAssistencia: 50, percentualAcerto: 8, lojaId: null })
     ).toBe(400);
   });
 });

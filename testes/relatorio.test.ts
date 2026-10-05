@@ -6,6 +6,7 @@ import {
   lerFiltrosRelatorio,
   type LinhaRelatorio,
   listaPorTipo,
+  nomeDaPlanilha,
   MONTADOR_ADM,
   MONTADOR_NENHUM,
   NOME_ADM,
@@ -112,6 +113,7 @@ function linha(dados: Partial<LinhaRelatorio>): LinhaRelatorio {
     valorServico: 100,
     valorMontador: 40,
     valorAssistencia: 2,
+    percentualAcerto: 8,
     lojaId: "loja-1",
     montadorId: "m-1",
     pagoPelaLoja: false,
@@ -214,6 +216,19 @@ describe("contas do relatório", () => {
 });
 
 describe("planilha", () => {
+  it("leva o nome da loja no arquivo quando o relatório é de uma loja", () => {
+    const f = lerFiltrosRelatorio({ de: "2026-10-01", ate: "2026-10-31" });
+    expect(nomeDaPlanilha(f, "Simonetti Móveis")).toBe("relatorio-simonetti-moveis-2026-10-01-a-2026-10-31.csv");
+    expect(nomeDaPlanilha(f)).toBe("relatorio-2026-10-01-a-2026-10-31.csv");
+  });
+
+  it("usa o acerto de cada montagem na receita", () => {
+    const [simonetti] = resumoPorLoja([
+      linha({ lojaId: "loja-s", loja: { nome: "Simonetti" }, valorServico: 300, valorAssistencia: 0, percentualAcerto: 100 }),
+    ]);
+    expect(simonetti).toMatchObject({ nome: "Simonetti", devidoAEmpresa: 300 });
+  });
+
   it("sai no padrão do Excel em português", () => {
     const csv = gerarPlanilha([linha({ valorServico: 1234.5 })], "cadastro");
     expect(csv.startsWith("﻿")).toBe(true);

@@ -4,12 +4,13 @@
 // nada dizia o que aquele número significava.
 
 /**
- * Percentual que a empresa cobra da loja sobre o valor da nota (o "acerto
- * padrão" combinado). A assistência da loja (Loja.percentualAssistencia,
- * gravada em cada montagem) entra por fora disso e também fica com a
- * empresa.
+ * Acerto de uma loja recém-cadastrada: o percentual da nota que a empresa
+ * cobra dela. Era o único valor, fixo, até cada loja passar a ter o seu
+ * (Loja.percentualAcerto) -- e cada montagem guarda o do momento em que foi
+ * lançada (Montagem.percentualAcerto). A assistência da loja entra por fora
+ * disso e também fica com a empresa.
  */
-export const PERCENTUAL_EMPRESA = 0.08;
+export const PERCENTUAL_ACERTO_PADRAO = 8;
 
 /**
  * Arredonda para centavos.
@@ -30,7 +31,14 @@ export function emCentavos(valor: number) {
   return Math.round((valor + Number.EPSILON) * 100) / 100;
 }
 
-type ValoresMontagem = { valorServico: number; valorAssistencia?: number | null };
+// `percentualAcerto` obrigatório pelo mesmo motivo do `lojaId` abaixo: uma
+// consulta que esquecesse de selecioná-lo cairia num acerto inventado, e o
+// erro só apareceria como número errado na tela.
+type ValoresMontagem = {
+  valorServico: number;
+  valorAssistencia?: number | null;
+  percentualAcerto: number;
+};
 
 // `lojaId` obrigatório de propósito: quem calcula receita precisa ter
 // selecionado a coluna. Se fosse opcional, uma consulta que esquecesse o
@@ -39,17 +47,18 @@ type ValoresMontagem = { valorServico: number; valorAssistencia?: number | null 
 // como erro de compilação.
 type ValoresComOrigem = ValoresMontagem & { lojaId: string | null };
 
-/** O que a loja deve à empresa por uma montagem: acerto padrão + assistência. */
+/** O que a loja deve à empresa por uma montagem: acerto da loja + assistência. */
 export function valorDevidoPelaLoja(montagem: ValoresMontagem) {
   return emCentavos(
-    montagem.valorServico * PERCENTUAL_EMPRESA + (montagem.valorAssistencia || 0)
+    (montagem.valorServico * montagem.percentualAcerto) / 100 + (montagem.valorAssistencia || 0)
   );
 }
 
 /**
  * Quanto a empresa fatura com uma montagem, antes da comissão do montador.
  *
- * Num serviço de loja a empresa fica só com o acerto (8% da nota) mais a
+ * Num serviço de loja a empresa fica só com o acerto (8% da nota, ou o que a
+ * loja tiver combinado) mais a
  * assistência -- o resto da nota é da loja. Num serviço particular não
  * existe loja para dividir: o cliente paga a empresa, e a nota inteira é
  * receita. Somar os dois casos com a mesma conta era o que fazia um

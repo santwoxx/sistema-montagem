@@ -6,7 +6,7 @@ import {
   dispensarFilaCentralSyncAction,
 } from "@/lib/actions/montagens";
 import { PREFIXO_PEDIDO_CENTRALSYNC, PREFIXOS_SERVICO_SEM_MONTAGEM } from "@/lib/centralsync";
-import { emCentavos, valorDevidoPelaLoja } from "@/lib/financeiro";
+import { somarReceitaDaEmpresa } from "@/lib/financeiro";
 import { formatarData, formatarDataHora, formatarMoeda, STATUS_COLOR, STATUS_LABEL } from "@/lib/format";
 import { intervaloDoMes, mesAtual } from "@/lib/datas";
 import { obterUrlBase } from "@/lib/url";
@@ -59,8 +59,7 @@ export default async function AdminDashboardPage({
     pendentes,
     emAndamento,
     naoAtribuidas,
-    aReceberAgg,
-    aReceberParticularAgg,
+    aReceberMontagens,
     aPagarAgg,
     faturamentoMesAgg,
     concluidasMes,
@@ -75,16 +74,13 @@ export default async function AdminDashboardPage({
     prisma.montagem.count({
       where: { montadorId: null, status: { not: "CANCELADO" } },
     }),
-    prisma.montagem.aggregate({
-      _sum: { valorServico: true, valorAssistencia: true },
-      where: { pagoPelaLoja: false, status: { not: "CANCELADO" }, lojaId: { not: null } },
-    }),
-    // Particular não tem acerto de 8%: o cliente deve a nota inteira. Somar
-    // junto com as de loja e aplicar uma regra só devolvia 8% de um valor
-    // que é 100% da empresa.
-    prisma.montagem.aggregate({
-      _sum: { valorServico: true },
-      where: { pagoPelaLoja: false, status: { not: "CANCELADO" }, lojaId: null },
+    // Linha a linha, e não uma soma no banco: cada montagem tem o acerto da
+    // sua loja (8% era fixo para todas), e particular não tem acerto -- o
+    // cliente deve a nota inteira. A regra de cada caso é a de
+    // receitaDaEmpresa, a mesma do Financeiro.
+    prisma.montagem.findMany({
+      where: { pagoPelaLoja: false, status: { not: "CANCELADO" } },
+      select: { valorServico: true, valorAssistencia: true, percentualAcerto: true, lojaId: true },
     }),
     prisma.montagem.aggregate({
       _sum: { valorMontador: true },
@@ -201,12 +197,7 @@ export default async function AdminDashboardPage({
     : [];
   const temAssinaturas = new Set(filaComAssinaturas.map((m) => m.id));
 
-  const aReceberDasLojas = emCentavos(
-    valorDevidoPelaLoja({
-      valorServico: aReceberAgg._sum.valorServico || 0,
-      valorAssistencia: aReceberAgg._sum.valorAssistencia || 0,
-    }) + (aReceberParticularAgg._sum.valorServico || 0)
-  );
+  const aReceberDasLojas = somarReceitaDaEmpresa(aReceberMontagens);
 
   return (
     <div>
@@ -387,7 +378,7 @@ export default async function AdminDashboardPage({
         <StatCard
           titulo="A receber (lojas e clientes)"
           valor={formatarMoeda(aReceberDasLojas)}
-          sub="Loja: 8% + assistência · Particular: valor cheio"
+          sub="Loja: acerto + assistência · Particular: valor cheio"
           icone="🏬"
         />
         <StatCard

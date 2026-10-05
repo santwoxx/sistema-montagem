@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { veioDoCentralSync } from "@/lib/centralsync";
 import {
   ehParticular,
+  acharLojaParceira,
   lancadaComoParticular,
   filtroDeOrigem,
   lerOrigem,
@@ -84,5 +85,37 @@ describe("montagem lançada no painel nasce particular", () => {
     expect(veioDoCentralSync(" desm-1")).toBe(true);
     expect(veioDoCentralSync("48213")).toBe(false);
     expect(veioDoCentralSync(null)).toBe(false);
+  });
+});
+
+describe("loja parceira com lançamento manual (ex.: Simonetti)", () => {
+  it("nota lançada à mão para ela continua sendo dela", () => {
+    expect(
+      lancadaComoParticular({ daIntegracao: false, tipoServico: "MONTAGEM", lojaLancamentoManual: true })
+    ).toBe(false);
+    expect(
+      lancadaComoParticular({ daIntegracao: false, tipoServico: "MONTAGEM", lojaLancamentoManual: false })
+    ).toBe(true);
+  });
+
+  const lojas = [
+    { id: "c", nome: "Central Móveis", cnpj: "00011122000199", lancamentoManual: false },
+    { id: "s", nome: "Simonetti Móveis", cnpj: null, lancamentoManual: true },
+    { id: "r", nome: "Móveis Rocha", cnpj: "11222333000144", lancamentoManual: true },
+  ];
+
+  it("reconhece a parceira pelo nome do emitente, ignorando palavras genéricas", () => {
+    expect(acharLojaParceira(lojas, { nome: "SIMONETTI COMERCIO DE MOVEIS LTDA" })?.id).toBe("s");
+  });
+
+  it("reconhece a parceira pelo CNPJ", () => {
+    expect(acharLojaParceira(lojas, { nome: "QUALQUER NOME", cnpj: "11.222.333/0001-44" })?.id).toBe("r");
+  });
+
+  it("não reconhece loja que não é parceira, nem nome parecido", () => {
+    // Central Móveis tem o CNPJ certo, mas não é parceira de lançamento manual.
+    expect(acharLojaParceira(lojas, { nome: "CENTRAL MOVEIS LTDA", cnpj: "00011122000199" })).toBeNull();
+    expect(acharLojaParceira(lojas, { nome: "SIMONE MOVEIS" })).toBeNull();
+    expect(acharLojaParceira(lojas, { nome: "" })).toBeNull();
   });
 });

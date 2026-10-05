@@ -13,6 +13,7 @@ import {
   TAMANHO_MAXIMO_UPLOAD_TEXTO,
 } from "@/lib/upload";
 import { linkWhatsapp, OCORRENCIA_LABEL, paraNumeroBr } from "@/lib/format";
+import { PERCENTUAL_ACERTO_PADRAO } from "@/lib/financeiro";
 import {
   ehDesmontagemOuAssistencia,
   idDaEntregaNoCentralSync,
@@ -116,6 +117,20 @@ async function processarManual(formData: FormData, caminhoErro: string) {
   };
 }
 
+// O acerto da loja nesta montagem (o quanto a empresa fica da nota): o do
+// formulário, que já vem preenchido com o do cadastro da loja, ou -- se o
+// campo não veio -- o próprio cadastro. Sem loja não há acerto: particular é
+// a nota inteira (ver receitaDaEmpresa).
+async function acertoDaMontagem(lojaId: string | null, valor: FormDataEntryValue | null) {
+  if (!lojaId) return 0;
+  if (valor !== null) return paraPercentual(valor);
+  const loja = await prisma.loja.findUnique({
+    where: { id: lojaId },
+    select: { percentualAcerto: true },
+  });
+  return loja?.percentualAcerto ?? PERCENTUAL_ACERTO_PADRAO;
+}
+
 export async function criarMontagemAction(formData: FormData) {
   await requireAdmin();
 
@@ -146,8 +161,19 @@ export async function criarMontagemAction(formData: FormData) {
   // de loja, além da montagem em loja (ver lancadaComoParticular). A nota
   // pendente só existe para pedido que veio pela integração.
   const daIntegracao = Boolean(notaPendenteId) || veioDoCentralSync(numeroPedido);
-  const particularAutomatico = lancadaComoParticular({ daIntegracao, tipoServico });
-  const lojaId = particularAutomatico ? null : lojaIdDoFormulario(lojaIdBruto);
+  const lojaIdFormulario = lojaIdDoFormulario(lojaIdBruto);
+  const lojaFormulario = lojaIdFormulario
+    ? await prisma.loja.findUnique({
+        where: { id: lojaIdFormulario },
+        select: { lancamentoManual: true },
+      })
+    : null;
+  const particularAutomatico = lancadaComoParticular({
+    daIntegracao,
+    tipoServico,
+    lojaLancamentoManual: Boolean(lojaFormulario?.lancamentoManual),
+  });
+  const lojaId = particularAutomatico ? null : lojaIdFormulario;
 
   if (tipoServico === "MONTAGEM_LOJA" && !lojaId) {
     redirect(
@@ -164,6 +190,7 @@ export async function criarMontagemAction(formData: FormData) {
   const percentualAssistencia = lojaId
     ? paraPercentual(formData.get("percentualAssistencia"))
     : 0;
+  const percentualAcerto = await acertoDaMontagem(lojaId, formData.get("percentualAcerto"));
   const percentualMontador = paraPercentual(formData.get("percentualMontador"));
   const dataAgendada = paraData(formData.get("dataAgendada"));
 
@@ -218,6 +245,7 @@ export async function criarMontagemAction(formData: FormData) {
       valorServico,
       percentualAssistencia,
       valorAssistencia,
+      percentualAcerto,
       percentualMontador,
       valorMontador,
       feitoPorAdm,
@@ -291,6 +319,7 @@ export async function atualizarMontagemAction(id: string, formData: FormData) {
   const percentualAssistencia = lojaId
     ? paraPercentual(formData.get("percentualAssistencia"))
     : 0;
+  const percentualAcerto = await acertoDaMontagem(lojaId, formData.get("percentualAcerto"));
   const percentualMontador = paraPercentual(formData.get("percentualMontador"));
   const dataAgendada = paraData(formData.get("dataAgendada"));
 
@@ -329,6 +358,7 @@ export async function atualizarMontagemAction(id: string, formData: FormData) {
       valorServico,
       percentualAssistencia,
       valorAssistencia,
+      percentualAcerto,
       notaUrl: notaUrl || null,
       ...manualDados,
       percentualMontador,
