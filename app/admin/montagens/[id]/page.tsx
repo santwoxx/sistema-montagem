@@ -10,7 +10,12 @@ import {
   concluirComProvaAction,
   reporNaFilaCentralSyncAction,
 } from "@/lib/actions/montagens";
-import { lancadaAMaoNaLojaDoCentralSync, podeEnviarAoCentralSync } from "@/lib/centralsync";
+import {
+  ehMontagemEmLojaAvulsa,
+  lancadaAMaoNaLojaDoCentralSync,
+  podeEnviarAoCentralSync,
+  rotuloDoServico,
+} from "@/lib/centralsync";
 import { AcoesCliente } from "@/components/AcoesCliente";
 import { Alerta, Badge, Button, Card, PageHeader } from "@/components/ui";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -30,7 +35,6 @@ import {
   STATUS_LABEL,
 } from "@/lib/format";
 import { VALOR_PARTICULAR_FORM } from "@/lib/servico";
-import { rotuloDoServico } from "@/lib/centralsync";
 
 // Teto de tempo das Server Actions desta página (a plataforma lê isto do
 // build). O envio ao CentralSync espera uma Cloud Function que quase sempre
@@ -57,8 +61,9 @@ export default async function MontagemDetalhePage({
         avaliacao: true,
         ocorrencias: { orderBy: { criadoEm: "desc" } },
         montador: true,
-        // integraCentralSync decide se o cartão de envio à Central Móveis
-        // aparece nas montagens lançadas à mão (ver lib/centralsync.ts).
+        // integraCentralSync decide se aparece o cartão que explica por que
+        // a montagem lançada à mão não vai para a Central Móveis (ver
+        // lancadaAMaoNaLojaDoCentralSync em lib/centralsync.ts).
         loja: { select: { nome: true, integraCentralSync: true } },
       },
     }),
@@ -69,22 +74,22 @@ export default async function MontagemDetalhePage({
 
   if (!montagem) notFound();
 
-  // Envio da conclusão para a Central Móveis: só o que chegou pela
-  // integração -- o pedido ("del-...") e a desmontagem/assistência que veio
-  // junto. Montagem lançada à mão é particular e não vai (ver
+  // Envio da conclusão para a Central Móveis: tudo o que chegou pela
+  // integração -- o pedido ("del-...") e a assistência, a desmontagem ou a
+  // montagem em loja que vieram junto --, seja qual for a loja escolhida
+  // aqui. Montagem lançada à mão é particular e não vai (ver
   // podeEnviarAoCentralSync).
   const vaiParaCentralSync = podeEnviarAoCentralSync(montagem);
   const particularNaLojaDoCentralSync = lancadaAMaoNaLojaDoCentralSync(montagem);
-  // Dentro do bloco do CentralSync a loja sempre existe: só se chega lá por
-  // pedido da integração ou por `loja.integraCentralSync`, e um serviço
-  // particular não tem loja nenhuma. O fallback existe só porque o
-  // TypeScript não consegue provar isso a partir de podeEnviarAoCentralSync.
+  // Só usado no cartão da montagem lançada à mão, onde a loja sempre existe
+  // (é a do CentralSync). O fallback é só para o TypeScript.
   const nomeLojaEnvio = montagem.loja?.nome ?? "loja";
-  // Assistência e desmontagem usam o mesmo botão da montagem, mas o que sai
-  // daqui é só comprovante: vai como serviço avulso, rotulado, e do outro
-  // lado não marca entrega nem lança acerto de montagem. A tela precisa
-  // dizer isso, senão o admin clica achando que está dando baixa na entrega.
+  // Assistência, desmontagem e montagem em loja sem pedido usam o mesmo botão
+  // da montagem, mas vão como serviço avulso, rotulado, e do outro lado não
+  // marcam entrega nem lançam acerto de montagem. A tela precisa dizer isso,
+  // senão o admin clica achando que está dando baixa numa entrega.
   const rotuloServico = rotuloDoServico(montagem.numeroPedido);
+  const montagemEmLojaAvulsa = ehMontagemEmLojaAvulsa(montagem.numeroPedido);
 
   return (
     <div>
@@ -252,10 +257,20 @@ export default async function MontagemDetalhePage({
         <Card className="mb-6 border-blue-100">
           <p className="text-sm font-medium text-slate-500">
             {rotuloServico
-              ? `${rotuloServico} · enviar comprovante para a ${nomeLojaEnvio}`
+              ? `${rotuloServico} · enviar comprovante ao CentralSync`
               : "Integração CentralSync"}
           </p>
-          {rotuloServico ? (
+          {rotuloServico && montagemEmLojaAvulsa ? (
+            <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-900">
+              Montagem em loja que o CentralSync pediu sem pedido vinculado. O
+              envio vai como serviço avulso e chega à loja marcado como
+              &ldquo;[{rotuloServico}]&rdquo;: lá a conclusão fica registrada,
+              com a foto e as assinaturas, no relatório de montagens em loja.{" "}
+              <strong className="font-semibold">Não</strong> dá baixa em
+              entrega nenhuma (não existe uma lá) — o acerto desta montagem
+              continua sendo o daqui.
+            </p>
+          ) : rotuloServico ? (
             <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-900">
               Isto é {rotuloServico.toLowerCase()}, não montagem. O envio vai
               como serviço avulso e chega à loja marcado como
@@ -342,7 +357,7 @@ export default async function MontagemDetalhePage({
           ) : (
             <p className="mt-1 text-sm text-slate-500">
               {rotuloServico
-                ? `Assim que este serviço for concluído (foto + assinaturas), o botão para enviar o comprovante para a ${nomeLojaEnvio} aparece aqui.`
+                ? "Assim que este serviço for concluído (foto + assinaturas), o botão para enviar o comprovante ao CentralSync aparece aqui e no painel geral."
                 : "Esse pedido veio do CentralSync. Quando quem for montar concluir (foto + assinaturas), a montagem aparece aqui e no painel geral com o botão para você conferir e enviar a conclusão para a loja."}
             </p>
           )}

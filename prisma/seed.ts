@@ -44,8 +44,7 @@ async function main() {
   });
   if (!centralMoveis) {
     await prisma.loja.create({
-      // integraCentralSync: é esta a loja que o CentralSync atende, e é o
-      // que libera o envio da conclusão nas montagens lançadas à mão (ver
+      // integraCentralSync: é esta a loja que o CentralSync atende (ver
       // lib/centralsync.ts). Instalação já existente é marcada pela migração
       // 20260902120000_loja_integra_centralsync, não por aqui.
       data: {

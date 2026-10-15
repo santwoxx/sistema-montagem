@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PREFIXOS_SERVICO_SEM_MONTAGEM, rotuloDoServico } from "@/lib/centralsync";
+import { PREFIXOS_SERVICO_AVULSO, rotuloDoServico } from "@/lib/centralsync";
 import {
   celulaTexto,
   gerarPlanilha,
@@ -22,16 +22,18 @@ import { VALOR_PARTICULAR_FORM } from "@/lib/servico";
 import { lerTipoServico, TIPO_SERVICO_LABEL, tipoPeloPedido } from "@/lib/tipo-servico";
 
 describe("tipo de serviço pelo nº do pedido", () => {
-  it("reconhece assistência e desmontagem do CentralSync", () => {
+  it("reconhece assistência, desmontagem e montagem em loja do CentralSync", () => {
     expect(tipoPeloPedido("ASSIST-123")).toBe("ASSISTENCIA");
     expect(tipoPeloPedido("  desm-9 ")).toBe("DESMONTAGEM");
+    expect(tipoPeloPedido("MONTLOJA-1788892226229-ar1jh")).toBe("MONTAGEM_LOJA");
+    // A montagem em loja COM pedido chega com o id da entrega.
     expect(tipoPeloPedido("del-1755")).toBe("MONTAGEM");
     expect(tipoPeloPedido("12345")).toBe("MONTAGEM");
     expect(tipoPeloPedido(null)).toBe("MONTAGEM");
   });
 
   it("concorda com os prefixos que lib/centralsync.ts usa", () => {
-    for (const prefixo of PREFIXOS_SERVICO_SEM_MONTAGEM) {
+    for (const prefixo of PREFIXOS_SERVICO_AVULSO) {
       const numero = `${prefixo.toUpperCase()}1`;
       const tipo = tipoPeloPedido(numero);
       expect(tipo).not.toBe("MONTAGEM");

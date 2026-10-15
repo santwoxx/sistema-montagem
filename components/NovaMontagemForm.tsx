@@ -118,12 +118,13 @@ export function NovaMontagemForm({
   const [notaUrl, setNotaUrl] = useState(valoresIniciais?.notaUrl ?? "");
   const [notaPendenteId, setNotaPendenteId] = useState("");
   const [solicitacaoId, setSolicitacaoId] = useState("");
-  // O "Nº do pedido" é um campo de texto comum na tela, mas quando vale
-  // "del-…" ele é a chave que liga esta montagem à entrega no CentralSync:
-  // trocá-lo pelo número do pedido da loja (que é o que o rótulo e o exemplo
-  // sugerem) apaga a integração em silêncio -- a montagem some da fila de
-  // envio do painel e o botão da tela dela deixa de existir. Por isso ele
-  // nasce travado nesse caso, com um jeito explícito de destravar para quem
+  // O "Nº do pedido" é um campo de texto comum na tela, mas quando é um
+  // número do CentralSync ("del-…", ou "ASSIST-…"/"DESM-…"/"MONTLOJA-…" dos
+  // serviços) ele é a chave que liga esta montagem à loja: trocá-lo pelo
+  // número do pedido da loja (que é o que o rótulo e o exemplo sugerem)
+  // apaga a integração em silêncio -- a montagem some da fila de envio do
+  // painel e o botão da tela dela deixa de existir. Por isso ele nasce
+  // travado nesse caso, com um jeito explícito de destravar para quem
   // realmente precisar corrigir o número.
   const [numeroDestravado, setNumeroDestravado] = useState(false);
   const [manualPreparando, setManualPreparando] = useState(false);
@@ -170,8 +171,9 @@ export function NovaMontagemForm({
     setClienteTelefone(nota.clienteTelefone ?? "");
     setClienteEndereco(nota.clienteEndereco);
     setNumeroPedido(nota.numeroPedido ?? "");
-    // Assistência e desmontagem do CentralSync já chegam marcadas pelo
-    // prefixo do pedido ("ASSIST-"/"DESM-").
+    // Assistência, desmontagem e montagem em loja sem pedido do CentralSync
+    // já chegam marcadas pelo prefixo do pedido ("ASSIST-"/"DESM-"/
+    // "MONTLOJA-").
     setTipoServico(tipoPeloPedido(nota.numeroPedido));
     setDescricaoServico(nota.descricaoServico);
     setObservacoes(nota.observacoes ?? "");
@@ -285,7 +287,7 @@ export function NovaMontagemForm({
   // readOnly (e não disabled): campo desabilitado não vai no FormData, e a
   // ação grava `numeroPedido: numeroPedido || null` -- ou seja, travar com
   // disabled apagaria justamente o número que se quer proteger.
-  const numeroTravado = pareceIdDoCentralSync(numeroPedido) && !numeroDestravado;
+  const numeroTravado = veioDoCentralSync(numeroPedido) && !numeroDestravado;
 
   // Montagem nova lançada aqui (digitada ou importada) é particular; só o
   // que veio do CentralSync -- e a montagem em loja -- leva loja. A mesma
@@ -620,7 +622,7 @@ export function NovaMontagemForm({
               label="Nº do pedido (opcional)"
               hint={
                 numeroTravado
-                  ? "Número da entrega no CentralSync — é por ele que os dois sistemas se reconhecem. Mudar aqui tira esta montagem da fila de envio."
+                  ? "Número do CentralSync — é por ele que os dois sistemas se reconhecem. Mudar aqui tira esta montagem da fila de envio."
                   : undefined
               }
             >

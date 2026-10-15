@@ -246,8 +246,9 @@ financeiro como R$ 32. A conta está em `receitaDaEmpresa`
 admin, no bloco "Loja x particular". As telas de financeiro (admin e montador)
 e a lista de montagens têm um filtro para ver só uma das duas.
 
-Montagem particular não é enviada ao CentralSync — não há loja do outro lado
-para receber a confirmação.
+Montagem lançada aqui como particular não é enviada ao CentralSync — não há
+loja do outro lado para receber a confirmação. (O que chegou pela integração
+volta para lá de qualquer jeito; ver "Integração com o CentralSync".)
 
 **Montagem lançada no painel nasce particular.** Só o que chega pela
 integração do CentralSync (em "Notas pendentes") é serviço de loja. O que é
@@ -305,15 +306,26 @@ O CentralSync é o sistema da loja. A ligação entre os dois é de mão dupla:
    aparece na caixa flutuante "Montagens Feitas" da aba Entregas &
    Assinaturas, e um administrador da loja confere e confirma.
 
-   **Assistência e desmontagem** (pedidos que chegam com `ASSIST-` ou
-   `DESM-`) usam o mesmo botão, mas o que sai daqui é só o comprovante. Elas
-   vão como serviço avulso — o id enviado é `mf-…`, não o da entrega — e
-   chegam à loja com a etiqueta `[ASSISTÊNCIA]` / `[DESMONTAGEM]` na frente
-   do nome de quem fez. Do outro lado isso **não** dá baixa na entrega
-   original nem lança acerto de montagem: serve para a loja ver a foto e as
-   assinaturas do serviço, que antes não tinham como chegar até lá. O acerto
-   da assistência continua sendo o combinado à parte (1% sobre a base, fora
-   dos 8% da montagem).
+   **Assistência, desmontagem e montagem em loja sem pedido** (que chegam
+   com `ASSIST-`, `DESM-` ou `MONTLOJA-`) usam o mesmo botão. Elas vão como
+   serviço avulso — o id enviado é `mf-…`, não o de uma entrega — e chegam à
+   loja com a etiqueta `[ASSISTÊNCIA]` / `[DESMONTAGEM]` /
+   `[MONTAGEM EM LOJA]` na frente do nome de quem fez, seguida do número do
+   pedido, que é por onde o CentralSync acha a solicitação. Do outro lado
+   isso **não** dá baixa em entrega nenhuma nem lança acerto de montagem:
+   registra a conclusão do serviço, com a foto e as assinaturas, no relatório
+   daquele serviço. O acerto da assistência continua sendo o combinado à
+   parte (1% sobre a base, fora dos 8% da montagem). A montagem em loja
+   *com* pedido vinculado chega com o `del-…` da entrega e volta como
+   qualquer pedido.
+
+   Tudo o que tem número do CentralSync volta para lá **seja qual for a
+   loja** escolhida aqui: a marcação "Loja atendida pelo CentralSync" não
+   decide o envio. Um prefixo novo criado lá precisa entrar em
+   `PREFIXOS_SERVICO_AVULSO` (`lib/centralsync.ts`) e em
+   `TIPO_PELO_PREFIXO` (`lib/tipo-servico.ts`) — sem isso o serviço é tratado
+   como lançado à mão e nunca volta, que foi o que aconteceu com a montagem
+   em loja (`MONTLOJA-`).
 
    Se faltar a foto ou alguma assinatura (por exemplo, quando a montagem foi
    marcada como concluída direto pelo painel, sem passar pelo aplicativo do

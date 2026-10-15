@@ -96,10 +96,10 @@ export default async function LojasPage({
             <span>
               Loja atendida pelo CentralSync
               <span className="block text-xs text-gray-500">
-                Libera o envio do comprovante de desmontagem e assistência que
-                chegam pela integração. Os pedidos da integração já vão de
-                qualquer jeito, e montagem lançada aqui à mão nunca vai: é
-                serviço particular.
+                Marca a loja do CentralSync (a Central Móveis). O que chega pela
+                integração — pedido, assistência, desmontagem e montagem em
+                loja — volta para lá de qualquer jeito; montagem lançada aqui à
+                mão nunca vai: é serviço particular.
               </span>
             </span>
           </label>
@@ -247,9 +247,10 @@ export default async function LojasPage({
                     <span>
                       Loja atendida pelo CentralSync
                       <span className="block text-xs text-gray-500">
-                        Libera o envio do comprovante de desmontagem e assistência
-                        que chegam pela integração. Montagem lançada aqui à mão
-                        nunca vai: é serviço particular.
+                        Marca a loja do CentralSync (a Central Móveis). O que
+                        chega pela integração volta para lá de qualquer jeito;
+                        montagem lançada aqui à mão nunca vai: é serviço
+                        particular.
                       </span>
                     </span>
                   </label>

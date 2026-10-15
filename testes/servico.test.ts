@@ -83,6 +83,9 @@ describe("montagem lançada no painel nasce particular", () => {
     expect(veioDoCentralSync("del-1755")).toBe(true);
     expect(veioDoCentralSync("ASSIST-9")).toBe(true);
     expect(veioDoCentralSync(" desm-1")).toBe(true);
+    // Montagem em loja sem pedido vinculado: ficava de fora e virava
+    // "lançada à mão".
+    expect(veioDoCentralSync("MONTLOJA-1788892226229-ar1jh")).toBe(true);
     expect(veioDoCentralSync("48213")).toBe(false);
     expect(veioDoCentralSync(null)).toBe(false);
   });

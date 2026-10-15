@@ -5,7 +5,7 @@ import {
   dispensarEnvioCentralSyncAction,
   dispensarFilaCentralSyncAction,
 } from "@/lib/actions/montagens";
-import { PREFIXO_PEDIDO_CENTRALSYNC, PREFIXOS_SERVICO_SEM_MONTAGEM } from "@/lib/centralsync";
+import { PREFIXO_PEDIDO_CENTRALSYNC, PREFIXOS_SERVICO_AVULSO } from "@/lib/centralsync";
 import { somarReceitaDaEmpresa } from "@/lib/financeiro";
 import { formatarData, formatarDataHora, formatarMoeda, STATUS_COLOR, STATUS_LABEL } from "@/lib/format";
 import { intervaloDoMes, mesAtual } from "@/lib/datas";
@@ -141,20 +141,18 @@ export default async function AdminDashboardPage({
         // (lib/centralsync.ts). Se a fila daqui e a checagem de lá
         // discordarem, a montagem some do painel mesmo com o botão da tela
         // dela funcionando -- ou aparece aqui e o clique volta com erro.
-        OR: [
-          // Pedido vindo da integração. "insensitive" porque o número fica
-          // num campo que o admin pode reescrever.
-          { numeroPedido: { startsWith: PREFIXO_PEDIDO_CENTRALSYNC, mode: "insensitive" } },
-          // Desmontagem e assistência que a integração mandou, quando a loja
-          // é a do CentralSync. Vão como avulsas e chegam lá rotuladas (ver
-          // nomeParaCentralSync). Montagem lançada à mão fica de fora mesmo
-          // nessa loja: é serviço particular e não volta para a Central
-          // Móveis.
-          ...PREFIXOS_SERVICO_SEM_MONTAGEM.map((prefixo) => ({
-            numeroPedido: { startsWith: prefixo, mode: "insensitive" as const },
-            loja: { integraCentralSync: true },
-          })),
-        ],
+        //
+        // Tudo o que tem número do CentralSync, seja qual for a loja: o
+        // pedido ("del-...") e os serviços que a integração mandou junto
+        // (assistência, desmontagem, montagem em loja), que vão como
+        // avulsos e chegam lá rotulados (ver nomeParaCentralSync).
+        // "insensitive" porque o número fica num campo que o admin pode
+        // reescrever. Montagem lançada à mão fica de fora mesmo na loja do
+        // CentralSync: é serviço particular e não volta para a Central
+        // Móveis.
+        OR: [PREFIXO_PEDIDO_CENTRALSYNC, ...PREFIXOS_SERVICO_AVULSO].map((prefixo) => ({
+          numeroPedido: { startsWith: prefixo, mode: "insensitive" as const },
+        })),
       },
       orderBy: { concluidoEm: "asc" },
       // 11 para saber que passou de 10 sem gastar um count() a mais.

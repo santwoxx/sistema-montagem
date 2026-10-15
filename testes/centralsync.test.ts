@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  ehDesmontagemOuAssistencia,
+  ehMontagemEmLojaAvulsa,
+  ehServicoAvulsoDoCentralSync,
   idDaEntregaNoCentralSync,
   lancadaAMaoNaLojaDoCentralSync,
   nomeParaCentralSync,
@@ -43,33 +44,77 @@ describe("pareceIdDoCentralSync", () => {
 const LOJA_CENTRALSYNC = { integraCentralSync: true };
 const LOJA_QUALQUER = { integraCentralSync: false };
 
+// Número que o CentralSync gera para a montagem em loja sem pedido vinculado
+// (newDarioRequestId("MONTLOJA") em utils/ids.ts de lá).
+const MONTAGEM_LOJA_AVULSA = "MONTLOJA-1788892226229-ar1jh";
+
 // É esta função que decide se o botão "Enviar para a Central Móveis" aparece
 // na tela da montagem e se ela entra na fila do painel. Um "sim" a mais aqui
-// manda para a loja um serviço que não é montagem; um "não" a mais deixa o
+// manda para a loja um serviço que não é dela; um "não" a mais deixa o
 // Dário sem jeito nenhum de mandar a foto.
 describe("podeEnviarAoCentralSync", () => {
-  it("libera o pedido que veio da integração, seja qual for a loja", () => {
-    expect(
-      podeEnviarAoCentralSync({ numeroPedido: "del-1755123456789", loja: LOJA_QUALQUER })
-    ).toBe(true);
+  it("libera o pedido que veio da integração", () => {
+    expect(podeEnviarAoCentralSync({ numeroPedido: "del-1755123456789" })).toBe(true);
   });
 
-  it("não libera montagem lançada à mão, nem na loja do CentralSync", () => {
+  it("não libera montagem lançada à mão", () => {
     // O que é digitado no painel é serviço particular da empresa: mandar o
     // comprovante para a Central Móveis punha na caixa deles um serviço que
     // não é da loja. Já foi liberado; não é mais.
-    expect(
-      podeEnviarAoCentralSync({ numeroPedido: "696228", loja: LOJA_CENTRALSYNC })
-    ).toBe(false);
+    expect(podeEnviarAoCentralSync({ numeroPedido: "696228" })).toBe(false);
     // Nº do pedido é opcional no formulário -- sem ele também não vai.
+    expect(podeEnviarAoCentralSync({ numeroPedido: null })).toBe(false);
+    // Um número que só CONTÉM um prefixo em outro lugar não passa por algo
+    // que veio da integração.
+    expect(podeEnviarAoCentralSync({ numeroPedido: "NF-del-99" })).toBe(false);
+    expect(podeEnviarAoCentralSync({ numeroPedido: "NF-MONTLOJA-99" })).toBe(false);
+  });
+
+  it("deixa enviar a montagem em loja sem pedido que o CentralSync mandou", () => {
+    // O caso que quebrou: o Dário concluiu uma montagem em loja, e a tela
+    // dizia "Lançada à mão: é tratada como serviço particular" -- o prefixo
+    // MONTLOJA- não casava com nada aqui, então não havia botão de envio.
+    expect(podeEnviarAoCentralSync({ numeroPedido: MONTAGEM_LOJA_AVULSA })).toBe(true);
+    expect(podeEnviarAoCentralSync({ numeroPedido: "  montloja-1788892226229-ar1jh " })).toBe(true);
     expect(
-      podeEnviarAoCentralSync({ numeroPedido: null, loja: LOJA_CENTRALSYNC })
+      lancadaAMaoNaLojaDoCentralSync({ numeroPedido: MONTAGEM_LOJA_AVULSA, loja: LOJA_CENTRALSYNC })
     ).toBe(false);
-    // Um número que só CONTÉM o prefixo em outro lugar não passa por pedido
-    // da integração.
+  });
+
+  it("deixa enviar assistência e desmontagem", () => {
+    // Elas ficavam sem botão nenhum, e o comprovante do serviço não chegava
+    // à loja. Vão como avulsas (idDaEntregaNoCentralSync devolve "mf-…", não
+    // o id da entrega), então lá nada é marcado como montado -- o que impede
+    // o acerto errado é o rótulo, testado logo abaixo.
     expect(
-      podeEnviarAoCentralSync({ numeroPedido: "NF-del-99", loja: LOJA_CENTRALSYNC })
-    ).toBe(false);
+      podeEnviarAoCentralSync({ numeroPedido: "DESM-del-1755123456789-2026-08-27" })
+    ).toBe(true);
+    expect(
+      podeEnviarAoCentralSync({ numeroPedido: "ASSIST-del-1755123456789-2026-08-27" })
+    ).toBe(true);
+    expect(podeEnviarAoCentralSync({ numeroPedido: "DESM-AVULSO-1788892226229-k2m9x" })).toBe(
+      true
+    );
+  });
+
+  it("devolve o que veio da integração seja qual for a loja escolhida aqui", () => {
+    // Os serviços dependiam de a loja estar marcada como do CentralSync:
+    // com a nota caindo numa loja sem a marcação, ou passada para
+    // particular, o botão sumia e o serviço que a loja pediu nunca voltava
+    // para ela. O pedido ("del-...") nunca dependeu da loja; os serviços
+    // agora também não -- voltam "igual às montagens comuns".
+    const numeros = [
+      "del-1755123456789",
+      "ASSIST-1755123456789",
+      "DESM-AVULSO-1755123456789",
+      MONTAGEM_LOJA_AVULSA,
+    ];
+    for (const loja of [LOJA_CENTRALSYNC, LOJA_QUALQUER, null]) {
+      for (const numeroPedido of numeros) {
+        const montagem = { numeroPedido, loja };
+        expect(podeEnviarAoCentralSync(montagem)).toBe(true);
+      }
+    }
   });
 
   it("aponta a montagem manual na loja do CentralSync, que a tela precisa explicar", () => {
@@ -92,57 +137,33 @@ describe("podeEnviarAoCentralSync", () => {
     ).toBe(false);
     expect(lancadaAMaoNaLojaDoCentralSync({ numeroPedido: "696228", loja: null })).toBe(false);
   });
+});
 
-  it("não libera montagem à mão de outra loja parceira", () => {
-    expect(
-      podeEnviarAoCentralSync({ numeroPedido: "696228", loja: LOJA_QUALQUER })
-    ).toBe(false);
-    expect(podeEnviarAoCentralSync({ numeroPedido: "696228", loja: null })).toBe(false);
+describe("serviços avulsos do CentralSync", () => {
+  it("reconhece assistência, desmontagem e montagem em loja, e só elas", () => {
+    expect(ehServicoAvulsoDoCentralSync("desm-1755123456789")).toBe(true);
+    expect(ehServicoAvulsoDoCentralSync("assist-1755123456789")).toBe(true);
+    expect(ehServicoAvulsoDoCentralSync(MONTAGEM_LOJA_AVULSA)).toBe(true);
+    // O pedido da integração não é avulso: volta com o id da entrega.
+    expect(ehServicoAvulsoDoCentralSync("del-1755123456789")).toBe(false);
+    expect(ehServicoAvulsoDoCentralSync("696228")).toBe(false);
+    expect(ehServicoAvulsoDoCentralSync(null)).toBe(false);
   });
 
-  it("deixa enviar desmontagem e assistência da loja do CentralSync", () => {
-    // Elas ficavam sem botão nenhum, e o comprovante do serviço não chegava
-    // à loja. Vão como avulsas (idDaEntregaNoCentralSync devolve "mf-…", não
-    // o id da entrega), então lá nada é marcado como montado -- o que impede
-    // o acerto errado é o rótulo, testado logo abaixo.
-    expect(
-      podeEnviarAoCentralSync({
-        numeroPedido: "DESM-del-1755123456789-2026-08-27",
-        loja: LOJA_CENTRALSYNC,
-      })
-    ).toBe(true);
-    expect(
-      podeEnviarAoCentralSync({
-        numeroPedido: "ASSIST-del-1755123456789-2026-08-27",
-        loja: LOJA_CENTRALSYNC,
-      })
-    ).toBe(true);
-    // Continuam reconhecidas como "não é montagem".
-    expect(ehDesmontagemOuAssistencia("desm-1755123456789")).toBe(true);
-    expect(ehDesmontagemOuAssistencia("assist-1755123456789")).toBe(true);
-    expect(ehDesmontagemOuAssistencia("696228")).toBe(false);
-    expect(ehDesmontagemOuAssistencia(null)).toBe(false);
-  });
-
-  it("não envia assistência de loja que não é do CentralSync", () => {
-    expect(
-      podeEnviarAoCentralSync({
-        numeroPedido: "ASSIST-1755123456789",
-        loja: LOJA_QUALQUER,
-      })
-    ).toBe(false);
-    // Serviço particular não tem loja nenhuma do outro lado.
-    expect(
-      podeEnviarAoCentralSync({ numeroPedido: "ASSIST-1755123456789", loja: null })
-    ).toBe(false);
+  it("separa a montagem em loja, que é montagem, das outras duas", () => {
+    expect(ehMontagemEmLojaAvulsa(MONTAGEM_LOJA_AVULSA)).toBe(true);
+    expect(ehMontagemEmLojaAvulsa("ASSIST-1755123456789")).toBe(false);
+    expect(ehMontagemEmLojaAvulsa("del-1755123456789")).toBe(false);
+    expect(ehMontagemEmLojaAvulsa(null)).toBe(false);
   });
 });
 
 describe("rótulo do serviço enviado à loja", () => {
-  it("nomeia assistência e desmontagem, e nada mais", () => {
+  it("nomeia assistência, desmontagem e montagem em loja, e nada mais", () => {
     expect(rotuloDoServico("ASSIST-del-1755123456789-2026-08-27")).toBe("ASSISTÊNCIA");
     expect(rotuloDoServico("assist-1755123456789")).toBe("ASSISTÊNCIA");
     expect(rotuloDoServico("DESM-1755123456789")).toBe("DESMONTAGEM");
+    expect(rotuloDoServico(MONTAGEM_LOJA_AVULSA)).toBe("MONTAGEM EM LOJA");
     expect(rotuloDoServico("del-1755123456789")).toBeNull();
     expect(rotuloDoServico("696228")).toBeNull();
     expect(rotuloDoServico(null)).toBeNull();
@@ -190,11 +211,26 @@ describe("idDaEntregaNoCentralSync", () => {
       "mf-cmtj9k75"
     );
   });
+
+  it("manda os serviços avulsos com o id daqui, nunca como uma entrega", () => {
+    // Não existe entrega MONTLOJA-… nem ASSIST-… do outro lado: com o número
+    // cru no lugar do id, a confirmação ficaria procurando uma entrega que
+    // não existe.
+    expect(
+      idDaEntregaNoCentralSync({ id: "cmtj9k75", numeroPedido: MONTAGEM_LOJA_AVULSA })
+    ).toBe("mf-cmtj9k75");
+    expect(
+      idDaEntregaNoCentralSync({
+        id: "cmtj9k75",
+        numeroPedido: "ASSIST-del-1755123456789-2026-08-27",
+      })
+    ).toBe("mf-cmtj9k75");
+  });
 });
 
 // A caixa "Montagens Feitas" do CentralSync mostra este texto em "Montado
-// por". Numa montagem lançada à mão não existe entrega do outro lado, então
-// é por aqui (e pelo id) que o pessoal da loja reconhece o serviço.
+// por". Num serviço avulso não existe entrega do outro lado, então é por aqui
+// (e pelo id) que o pessoal da loja reconhece o serviço.
 describe("nomeParaCentralSync", () => {
   it("manda só o nome de quem montou no pedido vindo da integração", () => {
     expect(
@@ -214,6 +250,23 @@ describe("nomeParaCentralSync", () => {
         montador: null,
       })
     ).toBeNull();
+  });
+
+  it("manda a montagem em loja no formato que o CentralSync lê", () => {
+    // Do outro lado, parseServiceConfirmation acha a solicitação pelo
+    // "Pedido <número>", pega quem fez no pedaço antes dele e o cliente no
+    // pedaço logo depois. O aviso do fim começa com "não é montagem" para
+    // não ser confundido com o cliente. O mesmo texto está nos testes de lá
+    // (utils/darioServiceConfirmation.test.ts) -- mudou aqui, muda lá.
+    expect(
+      nomeParaCentralSync({
+        numeroPedido: MONTAGEM_LOJA_AVULSA,
+        clienteNome: "CENTRAL MÓVEIS",
+        montador: { nome: "DÁRIO Montador1" },
+      })
+    ).toBe(
+      "[MONTAGEM EM LOJA] · DÁRIO Montador1 · Pedido MONTLOJA-1788892226229-ar1jh · CENTRAL MÓVEIS · não é montagem de entrega — só registrar a conclusão"
+    );
   });
 
   it("identifica a montagem lançada à mão com pedido e cliente", () => {

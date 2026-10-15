@@ -35,12 +35,15 @@ export const TIPO_SERVICO_COLOR: Record<TipoServico, string> = {
   MONTAGEM_LOJA: "bg-sky-100 text-sky-800 border border-sky-200",
 };
 
-// Os prefixos que o CentralSync põe no nº do pedido de assistência e de
-// desmontagem (os mesmos de PREFIXOS_SERVICO_SEM_MONTAGEM em
-// lib/centralsync.ts -- o teste confere que os dois concordam).
+// Os prefixos que o CentralSync põe no nº do pedido de assistência, de
+// desmontagem e de montagem em loja sem pedido vinculado (os mesmos de
+// PREFIXOS_SERVICO_AVULSO em lib/centralsync.ts -- o teste confere que os
+// dois concordam). A montagem em loja COM pedido chega com o `del-…` da
+// entrega e fica como montagem.
 const TIPO_PELO_PREFIXO: Array<[prefixo: string, tipo: TipoServico]> = [
   ["assist-", "ASSISTENCIA"],
   ["desm-", "DESMONTAGEM"],
+  ["montloja-", "MONTAGEM_LOJA"],
 ];
 
 /**
