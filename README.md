@@ -327,6 +327,12 @@ O CentralSync é o sistema da loja. A ligação entre os dois é de mão dupla:
    como lançado à mão e nunca volta, que foi o que aconteceu com a montagem
    em loja (`MONTLOJA-`).
 
+   A fila do painel não mostra os serviços que só essa regra liberou e que
+   foram concluídos antes dela (15/10/2026): quando ela entrou, todas as
+   montagens em loja do mês anterior, que nunca tinham tido botão, caíram de
+   uma vez na fila. Eles continuam com o botão de envio na tela de cada um
+   (`entraNaFilaDoPainel` / `filtroDaFilaDoPainel` em `lib/centralsync.ts`).
+
    Se faltar a foto ou alguma assinatura (por exemplo, quando a montagem foi
    marcada como concluída direto pelo painel, sem passar pelo aplicativo do
    montador), o envio é recusado com o aviso do que está faltando — em vez de

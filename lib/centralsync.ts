@@ -7,6 +7,8 @@
 // Fica num arquivo à parte (em vez de lib/actions/montagens.ts) porque esse
 // é um arquivo "use server" -- só pode exportar Server Actions (funções
 // async), e estas são só funções utilitárias síncronas.
+import type { Prisma } from "@prisma/client";
+
 export const PREFIXO_PEDIDO_CENTRALSYNC = "del-";
 
 // Prefixo dos ids inventados aqui para os envios avulsos (assistência,
@@ -137,6 +139,72 @@ export function rotuloDoServico(numeroPedido: string | null): string | null {
 // que não é dela.
 export function podeEnviarAoCentralSync(montagem: { numeroPedido: string | null }): boolean {
   return veioDoCentralSync(montagem.numeroPedido);
+}
+
+// Os serviços que já iam para a fila antes de 15/10/2026: assistência e
+// desmontagem, quando a loja era a marcada como do CentralSync.
+const PREFIXOS_QUE_JA_IAM_PELA_LOJA = ["desm-", "assist-"];
+
+// Quando a regra de podeEnviarAoCentralSync passou a valer: começo do dia
+// 15/10/2026 em Itabuna (03:00 UTC).
+//
+// Até então a montagem em loja sem pedido ("MONTLOJA-") nunca teve botão de
+// envio, e assistência/desmontagem de loja sem a marcação também não. Quando
+// a regra mudou, todas as concluídas desde setembro caíram de uma vez na
+// fila "Prontas para enviar ao CentralSync" do painel -- serviço do mês
+// passado, já resolvido por fora, aparecendo como se esperasse envio.
+//
+// A fila do painel só mostra os que a regra nova liberou se foram concluídos
+// a partir daqui. Os antigos não perdem nada: continuam com o botão de envio
+// na tela de cada montagem, para quem quiser mandar um deles de propósito.
+export const INICIO_REGRA_SERVICOS_AVULSOS = new Date("2026-10-15T03:00:00.000Z");
+
+/**
+ * Se a montagem concluída entra na fila "Prontas para enviar ao CentralSync"
+ * do painel. É podeEnviarAoCentralSync, menos os serviços antigos que só a
+ * regra de 15/10/2026 liberou (ver INICIO_REGRA_SERVICOS_AVULSOS). A consulta
+ * da fila em app/admin/page.tsx diz o mesmo em `where` -- mude os dois juntos.
+ */
+export function entraNaFilaDoPainel(montagem: {
+  numeroPedido: string | null;
+  concluidoEm: Date | null;
+  loja?: { integraCentralSync: boolean } | null;
+}): boolean {
+  if (pareceIdDoCentralSync(montagem.numeroPedido)) return true;
+  if (!ehServicoAvulsoDoCentralSync(montagem.numeroPedido)) return false;
+  const jaIaPelaLoja =
+    Boolean(montagem.loja?.integraCentralSync) &&
+    PREFIXOS_QUE_JA_IAM_PELA_LOJA.some((prefixo) => comecaCom(montagem.numeroPedido, prefixo));
+  if (jaIaPelaLoja) return true;
+  return (
+    montagem.concluidoEm !== null &&
+    montagem.concluidoEm.getTime() >= INICIO_REGRA_SERVICOS_AVULSOS.getTime()
+  );
+}
+
+/**
+ * Recorte de `where` (Prisma) da fila do painel -- o mesmo que
+ * entraNaFilaDoPainel. "insensitive" porque o número fica num campo que o
+ * admin pode reescrever.
+ */
+export function filtroDaFilaDoPainel(): Prisma.MontagemWhereInput {
+  const comeca = (prefixo: string) => ({
+    startsWith: prefixo,
+    mode: "insensitive" as const,
+  });
+  return {
+    OR: [
+      { numeroPedido: comeca(PREFIXO_PEDIDO_CENTRALSYNC) },
+      ...PREFIXOS_QUE_JA_IAM_PELA_LOJA.map((prefixo) => ({
+        numeroPedido: comeca(prefixo),
+        loja: { integraCentralSync: true },
+      })),
+      ...PREFIXOS_SERVICO_AVULSO.map((prefixo) => ({
+        numeroPedido: comeca(prefixo),
+        concluidoEm: { gte: INICIO_REGRA_SERVICOS_AVULSOS },
+      })),
+    ],
+  };
 }
 
 /**

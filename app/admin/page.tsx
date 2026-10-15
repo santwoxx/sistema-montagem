@@ -5,7 +5,7 @@ import {
   dispensarEnvioCentralSyncAction,
   dispensarFilaCentralSyncAction,
 } from "@/lib/actions/montagens";
-import { PREFIXO_PEDIDO_CENTRALSYNC, PREFIXOS_SERVICO_AVULSO } from "@/lib/centralsync";
+import { filtroDaFilaDoPainel } from "@/lib/centralsync";
 import { somarReceitaDaEmpresa } from "@/lib/financeiro";
 import { formatarData, formatarDataHora, formatarMoeda, STATUS_COLOR, STATUS_LABEL } from "@/lib/format";
 import { intervaloDoMes, mesAtual } from "@/lib/datas";
@@ -137,22 +137,18 @@ export default async function AdminDashboardPage({
         // dela, só não ocupa mais espaço aqui. Ver
         // dispensarEnvioCentralSyncAction.
         dispensadoCentralSyncEm: null,
-        // Precisa dizer o mesmo que podeEnviarAoCentralSync
-        // (lib/centralsync.ts). Se a fila daqui e a checagem de lá
-        // discordarem, a montagem some do painel mesmo com o botão da tela
-        // dela funcionando -- ou aparece aqui e o clique volta com erro.
-        //
-        // Tudo o que tem número do CentralSync, seja qual for a loja: o
-        // pedido ("del-...") e os serviços que a integração mandou junto
-        // (assistência, desmontagem, montagem em loja), que vão como
-        // avulsos e chegam lá rotulados (ver nomeParaCentralSync).
-        // "insensitive" porque o número fica num campo que o admin pode
-        // reescrever. Montagem lançada à mão fica de fora mesmo na loja do
+        // O que tem número do CentralSync (ver entraNaFilaDoPainel em
+        // lib/centralsync.ts): o pedido ("del-...") e os serviços que a
+        // integração mandou junto, que vão como avulsos e chegam lá
+        // rotulados. Montagem lançada à mão fica de fora mesmo na loja do
         // CentralSync: é serviço particular e não volta para a Central
         // Móveis.
-        OR: [PREFIXO_PEDIDO_CENTRALSYNC, ...PREFIXOS_SERVICO_AVULSO].map((prefixo) => ({
-          numeroPedido: { startsWith: prefixo, mode: "insensitive" as const },
-        })),
+        //
+        // Uma diferença proposital de podeEnviarAoCentralSync: os serviços
+        // antigos que só a regra de 15/10/2026 liberou (montagem em loja do
+        // mês passado, que nunca teve botão) não entram aqui -- tinham caído
+        // todos de uma vez nesta fila. Continuam com o botão na tela deles.
+        ...filtroDaFilaDoPainel(),
       },
       orderBy: { concluidoEm: "asc" },
       // 11 para saber que passou de 10 sem gastar um count() a mais.

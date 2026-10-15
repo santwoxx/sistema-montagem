@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   ehMontagemEmLojaAvulsa,
   ehServicoAvulsoDoCentralSync,
+  entraNaFilaDoPainel,
+  filtroDaFilaDoPainel,
   idDaEntregaNoCentralSync,
+  INICIO_REGRA_SERVICOS_AVULSOS,
   lancadaAMaoNaLojaDoCentralSync,
   nomeParaCentralSync,
   pareceIdDoCentralSync,
@@ -136,6 +139,93 @@ describe("podeEnviarAoCentralSync", () => {
       lancadaAMaoNaLojaDoCentralSync({ numeroPedido: "696228", loja: LOJA_QUALQUER })
     ).toBe(false);
     expect(lancadaAMaoNaLojaDoCentralSync({ numeroPedido: "696228", loja: null })).toBe(false);
+  });
+});
+
+// A fila "Prontas para enviar ao CentralSync" do painel. Quando a regra de
+// 15/10/2026 passou a reconhecer a montagem em loja (MONTLOJA-), todas as do
+// mês passado -- que nunca tiveram botão e já tinham sido resolvidas por
+// fora -- caíram de uma vez nesta fila.
+describe("entraNaFilaDoPainel", () => {
+  const SETEMBRO = new Date("2026-09-22T19:26:49.000Z");
+  const ANTES_DA_REGRA = new Date("2026-10-15T02:59:59.000Z");
+  const HOJE = new Date("2026-10-15T20:00:00.000Z");
+
+  it("deixa de fora a montagem em loja concluída antes da regra", () => {
+    // O caso da tela do Dário: "Entrega MONTLOJA-17900…", concluídas em setembro.
+    for (const loja of [LOJA_CENTRALSYNC, LOJA_QUALQUER, null]) {
+      expect(
+        entraNaFilaDoPainel({ numeroPedido: "MONTLOJA-1790105209600-ab12c", concluidoEm: SETEMBRO, loja })
+      ).toBe(false);
+    }
+    expect(
+      entraNaFilaDoPainel({ numeroPedido: MONTAGEM_LOJA_AVULSA, concluidoEm: ANTES_DA_REGRA, loja: LOJA_CENTRALSYNC })
+    ).toBe(false);
+    expect(
+      entraNaFilaDoPainel({ numeroPedido: MONTAGEM_LOJA_AVULSA, concluidoEm: null, loja: LOJA_CENTRALSYNC })
+    ).toBe(false);
+    // Fora da fila não quer dizer sem envio: o botão da tela continua.
+    expect(podeEnviarAoCentralSync({ numeroPedido: "MONTLOJA-1790105209600-ab12c" })).toBe(true);
+  });
+
+  it("põe na fila a montagem em loja concluída a partir da regra", () => {
+    expect(
+      entraNaFilaDoPainel({ numeroPedido: MONTAGEM_LOJA_AVULSA, concluidoEm: HOJE, loja: LOJA_CENTRALSYNC })
+    ).toBe(true);
+    expect(
+      entraNaFilaDoPainel({
+        numeroPedido: MONTAGEM_LOJA_AVULSA,
+        concluidoEm: INICIO_REGRA_SERVICOS_AVULSOS,
+        loja: null,
+      })
+    ).toBe(true);
+  });
+
+  it("mantém na fila o que já ia antes da regra, de qualquer data", () => {
+    // Pedido da integração: sempre foi para a fila.
+    expect(
+      entraNaFilaDoPainel({ numeroPedido: "del-1755123456789", concluidoEm: SETEMBRO, loja: null })
+    ).toBe(true);
+    // Assistência e desmontagem da loja do CentralSync: também já iam.
+    expect(
+      entraNaFilaDoPainel({ numeroPedido: "ASSIST-1755123456789", concluidoEm: SETEMBRO, loja: LOJA_CENTRALSYNC })
+    ).toBe(true);
+    expect(
+      entraNaFilaDoPainel({ numeroPedido: "DESM-AVULSO-1755", concluidoEm: SETEMBRO, loja: LOJA_CENTRALSYNC })
+    ).toBe(true);
+  });
+
+  it("trata assistência de loja sem a marcação como a montagem em loja", () => {
+    // Antes da regra ela não tinha botão; antiga não entra, nova entra.
+    expect(
+      entraNaFilaDoPainel({ numeroPedido: "ASSIST-1755123456789", concluidoEm: SETEMBRO, loja: LOJA_QUALQUER })
+    ).toBe(false);
+    expect(
+      entraNaFilaDoPainel({ numeroPedido: "ASSIST-1755123456789", concluidoEm: HOJE, loja: LOJA_QUALQUER })
+    ).toBe(true);
+  });
+
+  it("nunca põe na fila a montagem lançada à mão", () => {
+    expect(entraNaFilaDoPainel({ numeroPedido: "696228", concluidoEm: HOJE, loja: LOJA_CENTRALSYNC })).toBe(false);
+    expect(entraNaFilaDoPainel({ numeroPedido: null, concluidoEm: HOJE, loja: LOJA_CENTRALSYNC })).toBe(false);
+  });
+
+  it("a consulta do painel corta pela mesma data", () => {
+    // O `where` da fila (app/admin/page.tsx) e a função acima precisam
+    // concordar: os serviços liberados pela regra nova só entram concluídos
+    // a partir do corte.
+    const filtro = filtroDaFilaDoPainel();
+    const ramos = filtro.OR as Array<Record<string, unknown>>;
+    const comCorte = ramos.filter((r) => "concluidoEm" in r);
+    expect(comCorte.length).toBeGreaterThan(0);
+    for (const ramo of comCorte) {
+      expect(ramo.concluidoEm).toEqual({ gte: INICIO_REGRA_SERVICOS_AVULSOS });
+    }
+    const montloja = ramos.filter(
+      (r) => (r.numeroPedido as { startsWith: string }).startsWith === "montloja-"
+    );
+    expect(montloja).toHaveLength(1);
+    expect(montloja[0]).toHaveProperty("concluidoEm");
   });
 });
 
