@@ -8,27 +8,30 @@ import { createSession, destroySession, hashPassword, verifyPassword } from "@/l
 import { emailAutorizadoComoAdmin, verificarTokenGoogle } from "@/lib/firebase-verify";
 import { ipDoPedido, limparTentativas, registrarTentativa } from "@/lib/limite";
 
-// 10 tentativas de senha errada em 15 minutos, contadas por e-mail e por
+// 10 tentativas de senha errada em 15 minutos, contadas por conta e por
 // origem. É folgado para quem errou a senha algumas vezes no celular e
 // apertado para quem está varrendo senhas. Ver as ressalvas em lib/limite.ts.
 const LIMITE_LOGIN = { limite: 10, janelaMs: 15 * 60 * 1000 };
 
 export async function loginAction(formData: FormData) {
-  const email = String(formData.get("email") || "")
+  // E-mail ou nome de usuário, no mesmo campo: com "@" é e-mail, sem é
+  // usuário (User.usuario nunca tem "@"). Os dois são guardados em
+  // minúsculas, então tanto faz como a pessoa digitou.
+  const login = String(formData.get("login") || "")
     .trim()
     .toLowerCase();
   const senha = String(formData.get("senha") || "");
   const proximo = String(formData.get("proximo") || "");
 
-  if (!email || !senha) {
-    redirect(`/login?erro=${encodeURIComponent("Preencha e-mail e senha.")}`);
+  if (!login || !senha) {
+    redirect(`/login?erro=${encodeURIComponent("Preencha usuário (ou e-mail) e senha.")}`);
   }
 
-  // Duas chaves: por e-mail (para não deixar martelar uma conta específica
-  // de vários lugares) e por origem (para não deixar varrer vários e-mails
+  // Duas chaves: por conta (para não deixar martelar uma conta específica
+  // de vários lugares) e por origem (para não deixar varrer várias contas
   // do mesmo lugar).
   const ip = ipDoPedido(await headers());
-  const chaves = [`login:email:${email}`, `login:ip:${ip}`];
+  const chaves = [`login:conta:${login}`, `login:ip:${ip}`];
   for (const chave of chaves) {
     const limite = registrarTentativa(chave, LIMITE_LOGIN);
     if (!limite.permitido) {
@@ -42,15 +45,17 @@ export async function loginAction(formData: FormData) {
     }
   }
 
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await prisma.user.findUnique({
+    where: login.includes("@") ? { email: login } : { usuario: login },
+  });
 
   if (!user || !user.ativo) {
-    redirect(`/login?erro=${encodeURIComponent("E-mail ou senha inválidos.")}`);
+    redirect(`/login?erro=${encodeURIComponent("Usuário ou senha inválidos.")}`);
   }
 
   const senhaOk = await verifyPassword(senha, user.senha);
   if (!senhaOk) {
-    redirect(`/login?erro=${encodeURIComponent("E-mail ou senha inválidos.")}`);
+    redirect(`/login?erro=${encodeURIComponent("Usuário ou senha inválidos.")}`);
   }
 
   // Entrou: o contador não pode continuar penalizando esta conta.

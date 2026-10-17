@@ -45,6 +45,11 @@ model User {
   id        String   @id @default(cuid())
   nome      String
   email     String   @unique
+  // Nome de usuário para entrar com usuário e senha, como alternativa ao
+  // e-mail (sempre minúsculo, nunca com "@" -- é o "@" que separa os dois
+  // no login). Hoje só é preenchido pelo seed, a partir das variáveis
+  // ADMIN_USUARIO* (ver prisma/seed.ts).
+  usuario   String?  @unique
   telefone  String?
   fotoUrl   String?
   senha     String

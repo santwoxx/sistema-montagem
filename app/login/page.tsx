@@ -109,7 +109,7 @@ export default async function LoginPage({
 
             <div className="my-6 flex items-center gap-3">
               <div className="h-px flex-1 bg-slate-200" />
-              <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">Acesso Montador</span>
+              <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">Ou com usuário e senha</span>
               <div className="h-px flex-1 bg-slate-200" />
             </div>
 
@@ -118,13 +118,17 @@ export default async function LoginPage({
                 <input type="hidden" name="proximo" value={proximo} />
               ) : null}
 
-              <Field label="E-mail">
+              <Field label="Usuário ou e-mail">
                 <Input
-                  type="email"
-                  name="email"
+                  type="text"
+                  inputMode="email"
+                  name="login"
                   required
-                  placeholder="seuemail@exemplo.com"
+                  placeholder="seu usuário ou seuemail@exemplo.com"
                   autoComplete="username"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
                 />
               </Field>
 

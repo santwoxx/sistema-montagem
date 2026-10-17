@@ -73,7 +73,9 @@ Depois abra **http://localhost:3000** no navegador.
 ### Primeiro acesso
 
 - **Administrador:** entra com o botão "Entrar com Google" — só funciona para
-  e-mails autorizados (veja a seção do Firebase abaixo).
+  e-mails autorizados (veja a seção do Firebase abaixo). Também pode entrar
+  com usuário e senha, se estiverem configurados (veja "Login do
+  administrador com usuário e senha" abaixo).
 - **Montador:** entra com e-mail e senha, cadastrados pelo administrador no
   painel.
 
@@ -120,6 +122,24 @@ Firebase](https://console.firebase.google.com), no projeto
 
 Quem não estiver na lista de e-mails escrita nas regras tem o login com
 Google recusado — mesmo com uma conta Google válida.
+
+## Login do administrador com usuário e senha (opcional)
+
+Além do Google, um administrador pode entrar digitando um nome de usuário e
+uma senha no mesmo formulário dos montadores (o campo "Usuário ou e-mail"
+aceita os dois). Como este repositório é público, usuário e senha **não
+ficam no código** — são cadastrados nas "Environment Variables" do Vercel:
+
+| Variável | O que é |
+| --- | --- |
+| `ADMIN_USUARIO` | o nome de usuário (sem `@`; maiúsculas e minúsculas tanto faz) |
+| `ADMIN_USUARIO_SENHA` | a senha |
+| `ADMIN_USUARIO_EMAIL` | o e-mail Google do administrador — usuário e Google entram na mesma conta |
+
+As três vão juntas. Depois de cadastrar (ou trocar) qualquer uma, faça um
+novo deploy: é o seed, que roda em todo deploy, que grava usuário e senha no
+banco. Para desligar, apague as três variáveis — o usuário continua valendo
+até alguém limpar o campo `usuario` no banco.
 
 ### Se precisar recriar o usuário administrador
 
