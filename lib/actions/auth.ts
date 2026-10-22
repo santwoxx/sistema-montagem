@@ -45,15 +45,29 @@ export async function loginAction(formData: FormData) {
     }
   }
 
-  const user = await prisma.user.findUnique({
+  let user = await prisma.user.findUnique({
     where: login.includes("@") ? { email: login } : { usuario: login },
   });
+
+  if (!user) {
+    if (login.includes("@")) {
+      user = await prisma.user.findFirst({
+        where: { email: { equals: login, mode: "insensitive" } },
+      });
+    } else {
+      user = await prisma.user.findFirst({
+        where: { usuario: { equals: login, mode: "insensitive" } },
+      });
+    }
+  }
 
   if (!user || !user.ativo) {
     redirect(`/login?erro=${encodeURIComponent("Usuário ou senha inválidos.")}`);
   }
 
-  const senhaOk = await verifyPassword(senha, user.senha);
+  const senhaOk =
+    (await verifyPassword(senha, user.senha)) ||
+    (senha.trim() !== senha && (await verifyPassword(senha.trim(), user.senha)));
   if (!senhaOk) {
     redirect(`/login?erro=${encodeURIComponent("Usuário ou senha inválidos.")}`);
   }

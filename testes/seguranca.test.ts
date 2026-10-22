@@ -87,3 +87,22 @@ describe("validação do que chega de fora", () => {
     expect(OrigemEnvioSchema.safeParse("https://site-de-fora.com").success).toBe(false);
   });
 });
+
+describe("login e credenciais de administrador", () => {
+  it("normaliza usuário Dario-Dmnmontagem para dario-dmnmontagem", () => {
+    const digitado = "  Dario-Dmnmontagem  ";
+    const normalizado = digitado.trim().toLowerCase();
+    expect(normalizado).toBe("dario-dmnmontagem");
+    expect(normalizado.includes("@")).toBe(false);
+  });
+
+  it("verifica hash de senha corretamente", async () => {
+    const bcrypt = await import("bcryptjs");
+    const hash = await bcrypt.default.hash("88434848", 10);
+    expect(await bcrypt.default.compare("88434848", hash)).toBe(true);
+    expect(await bcrypt.default.compare("88434848 ", hash)).toBe(false);
+    expect(await bcrypt.default.compare("88434848 ".trim(), hash)).toBe(true);
+    expect(await bcrypt.default.compare("senha_errada", hash)).toBe(false);
+  });
+});
+

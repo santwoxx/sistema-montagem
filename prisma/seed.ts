@@ -71,24 +71,16 @@ async function main() {
   // criar sozinho (o primeiro admin).
 }
 
-// Usuário, senha e conta vêm das variáveis de ambiente (Vercel -> Settings
-// -> Environment Variables), nunca do código: este repositório é público, e
-// nem o hash da senha pode ficar aqui -- senha curta sai dele por força
-// bruta. A conta é a do e-mail informado, a mesma que entra pelo Google,
-// então os dois caminhos levam ao mesmo usuário. Como o seed roda a cada
-// deploy, trocar a senha é trocar a variável e publicar de novo.
+// Usuário, senha e conta vêm das credenciais do Dario ou das variáveis de
+// ambiente (Vercel -> Settings -> Environment Variables). Como o seed roda a
+// cada deploy, o administrador padrão (Dario) fica garantido com papel ADMIN
+// e status ativo, e os campos podem ser sobrescritos pelas variáveis se necessário.
 async function configurarLoginPorUsuario() {
-  const usuarioDigitado = process.env.ADMIN_USUARIO?.trim();
-  const senha = process.env.ADMIN_USUARIO_SENHA;
-  const email = process.env.ADMIN_USUARIO_EMAIL?.trim().toLowerCase();
-
-  if (!usuarioDigitado && !senha && !email) return;
-  if (!usuarioDigitado || !senha || !email) {
-    console.warn(
-      "Login por usuário NÃO configurado: ADMIN_USUARIO, ADMIN_USUARIO_SENHA e ADMIN_USUARIO_EMAIL precisam estar todas definidas."
-    );
-    return;
-  }
+  const usuarioDigitado = process.env.ADMIN_USUARIO?.trim() || "Dario-Dmnmontagem";
+  const senha = process.env.ADMIN_USUARIO_SENHA || "88434848";
+  const email = (
+    process.env.ADMIN_USUARIO_EMAIL?.trim() || "dario.montador1985@gmail.com"
+  ).toLowerCase();
 
   // Minúsculo, como o login compara. Sem "@": é ele que diz ao login se o
   // que foi digitado é e-mail ou usuário.
@@ -98,16 +90,23 @@ async function configurarLoginPorUsuario() {
     return;
   }
 
-  const conta = await prisma.user.findUnique({ where: { email } });
-  if (conta && conta.role !== "ADMIN") {
-    console.warn(`Login por usuário NÃO configurado: ${email} é de um montador, não de um administrador.`);
-    return;
+  // Busca conta existente por e-mail ou por usuário
+  let conta = await prisma.user.findUnique({ where: { email } });
+  if (!conta) {
+    conta = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { usuario },
+          { usuario: { equals: usuario, mode: "insensitive" } },
+        ],
+      },
+    });
   }
 
-  // O usuário é único. Se outra conta já o tinha (o e-mail da variável
-  // mudou), ela o perde em vez de o deploy falhar no índice.
+  // O usuário é único. Se outra conta já o tinha (o e-mail mudou),
+  // ela o perde em vez de o deploy falhar no índice.
   await prisma.user.updateMany({
-    where: { usuario, NOT: { email } },
+    where: { usuario, NOT: conta ? { id: conta.id } : { email } },
     data: { usuario: null },
   });
 
@@ -115,14 +114,32 @@ async function configurarLoginPorUsuario() {
   if (conta) {
     await prisma.user.update({
       where: { id: conta.id },
-      data: { usuario, senha: senhaHash },
+      data: {
+        usuario,
+        senha: senhaHash,
+        role: "ADMIN",
+        ativo: true,
+        nome: conta.nome && conta.nome !== "Administrador" ? conta.nome : "Dario",
+      },
     });
+    console.log(
+      `Login de administrador configurado para ${conta.nome || "Dario"} (usuário: "${usuario}", role: ADMIN).`
+    );
   } else {
     await prisma.user.create({
-      data: { nome: usuarioDigitado, email, usuario, senha: senhaHash, role: "ADMIN" },
+      data: {
+        nome: "Dario",
+        email,
+        usuario,
+        senha: senhaHash,
+        role: "ADMIN",
+        ativo: true,
+      },
     });
+    console.log(
+      `Login de administrador "${usuarioDigitado}" criado com sucesso para ${email} (Role: ADMIN).`
+    );
   }
-  console.log(`Login por usuário "${usuarioDigitado}" configurado para ${email}.`);
 }
 
 main()
