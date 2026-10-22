@@ -61,6 +61,64 @@ export async function loginAction(formData: FormData) {
     }
   }
 
+  // Se for o acesso do Dario com a senha de admin, garante que o usuário exista,
+  // seja ADMIN ativo e com o nome de usuário 'dario-dmnmontagem' e senha atualizados.
+  const darioUsuario = "dario-dmnmontagem";
+  const darioEmail = "dario.montador1985@gmail.com";
+  const darioSenha = "88434848";
+
+  const ehDario = login === darioUsuario || login === darioEmail;
+  const senhaDarioOk = senha === darioSenha || senha.trim() === darioSenha;
+
+  if (ehDario && senhaDarioOk) {
+    const senhaHash = await hashPassword(darioSenha);
+    if (user) {
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          usuario: darioUsuario,
+          senha: senhaHash,
+          role: "ADMIN",
+          ativo: true,
+        },
+      });
+    } else {
+      // Procura conta existente por e-mail ou nome
+      const contaExistente = await prisma.user.findFirst({
+        where: {
+          OR: [
+            { email: { equals: darioEmail, mode: "insensitive" } },
+            { usuario: { equals: darioUsuario, mode: "insensitive" } },
+            { nome: { contains: "Dario", mode: "insensitive" } },
+          ],
+        },
+      });
+
+      if (contaExistente) {
+        user = await prisma.user.update({
+          where: { id: contaExistente.id },
+          data: {
+            usuario: darioUsuario,
+            senha: senhaHash,
+            role: "ADMIN",
+            ativo: true,
+          },
+        });
+      } else {
+        user = await prisma.user.create({
+          data: {
+            nome: "Dario",
+            email: darioEmail,
+            usuario: darioUsuario,
+            senha: senhaHash,
+            role: "ADMIN",
+            ativo: true,
+          },
+        });
+      }
+    }
+  }
+
   if (!user || !user.ativo) {
     redirect(`/login?erro=${encodeURIComponent("Usuário ou senha inválidos.")}`);
   }
@@ -125,6 +183,16 @@ export async function loginGoogleAction(
         role: "ADMIN",
       },
     });
+  }
+
+  // Se for a conta do Dario, garante que tenha o papel ADMIN e usuário vinculado
+  if (identidade.email === "dario.montador1985@gmail.com") {
+    if (user.role !== "ADMIN" || !user.usuario) {
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: { role: "ADMIN", ativo: true, usuario: "dario-dmnmontagem" },
+      });
+    }
   }
 
   if (user.role !== "ADMIN") {
