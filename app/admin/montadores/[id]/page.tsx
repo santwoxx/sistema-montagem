@@ -83,6 +83,40 @@ export default async function MontadorDetalhePage({
   const mediaAvaliacao = avaliacaoAgg._avg.estrelas ?? 0;
   const totalAvaliacoes = avaliacaoAgg._count._all;
 
+  // Tudo o que a exclusão leva junto. O aviso só falava das montagens, mas
+  // as avaliações somem em cascata (Avaliacao.montador é onDelete: Cascade),
+  // e as montagens que ficam sem montador incluem as que ainda têm comissão
+  // a pagar a ele.
+  const comissaoNaoPaga = ganhos._sum.valorMontador ?? 0;
+  const avisoExclusao = [
+    "Excluir remove o login deste montador e não pode ser desfeito.",
+    totalAvaliacoes > 0
+      ? `Também apaga ${totalAvaliacoes === 1 ? "a avaliação" : `as ${totalAvaliacoes} avaliações`} que os clientes deram a ele.`
+      : null,
+    totalMontagens > 0
+      ? `${totalMontagens === 1 ? "A montagem dele continua" : `As ${totalMontagens} montagens dele continuam`} existindo, mas sem montador: o histórico e o financeiro deixam de mostrar quem fez${comissaoNaoPaga > 0 ? `, inclusive ${formatarMoeda(comissaoNaoPaga)} de comissão que ainda não foi paga` : ""}.`
+      : null,
+    'Se ele só se afastou, prefira desmarcar "Montador ativo" acima: o login para de funcionar e nada se perde.',
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const confirmacaoExclusao = [
+    `Excluir o montador "${montador.nome}"?`,
+    totalAvaliacoes > 0
+      ? totalAvaliacoes === 1
+        ? "A avaliação dele será apagada."
+        : `As ${totalAvaliacoes} avaliações dele serão apagadas.`
+      : null,
+    totalMontagens > 0
+      ? totalMontagens === 1
+        ? "A montagem dele fica sem montador."
+        : `As ${totalMontagens} montagens dele ficam sem montador.`
+      : null,
+    "Essa ação não pode ser desfeita.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   const comissaoPorLoja = new Map(comissoes.map((c) => [c.lojaId, c.percentual]));
 
   return (
@@ -289,14 +323,10 @@ export default async function MontadorDetalhePage({
 
       <Card className="mt-8 border-red-100">
         <p className="text-sm font-medium text-slate-500">Zona de risco</p>
-        <p className="mt-1 text-sm text-slate-500">
-          {totalMontagens > 0
-            ? `Este montador tem ${totalMontagens} montagem(ns) no histórico. Excluir o cadastro remove o login dele, mas as montagens continuam existindo (ficam sem montador). Se é só um afastamento temporário, prefira desativar em vez de excluir.`
-            : 'Excluir remove o login deste montador permanentemente. Se é só um afastamento temporário, prefira desmarcar "Montador ativo" acima em vez de excluir.'}
-        </p>
+        <p className="mt-1 text-sm text-slate-500">{avisoExclusao}</p>
         <FormConfirmar
           action={excluirMontadorAction.bind(null, montador.id)}
-          mensagem={`Excluir o montador "${montador.nome}"? Essa ação não pode ser desfeita.`}
+          mensagem={confirmacaoExclusao}
           className="mt-3"
         >
           <Button type="submit" variante="perigo">

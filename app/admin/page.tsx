@@ -46,10 +46,11 @@ export default async function AdminDashboardPage({
   // às 21h do último dia do mês anterior no horário de Itabuna.
   const { inicio: inicioMes, fim: fimMes } = intervaloDoMes(mesAtual());
 
-  // O mês do faturamento é o das montagens CONCLUÍDAS no mês. Antes o valor
-  // era somado por `createdAt` enquanto a contagem ao lado ("X concluída(s)
-  // no mês") já era por `concluidoEm` -- o mesmo cartão misturava duas
-  // definições de mês, e nenhuma delas batia com o painel do montador.
+  // O mês do "Valor das notas do mês" é o das montagens CONCLUÍDAS no mês.
+  // Antes o valor era somado por `createdAt` enquanto a contagem ao lado ("X
+  // concluída(s) no mês") já era por `concluidoEm` -- o mesmo cartão
+  // misturava duas definições de mês, e nenhuma delas batia com o painel do
+  // montador.
   const concluidasNoMes = {
     status: "CONCLUIDO",
     concluidoEm: { gte: inicioMes, lt: fimMes },
@@ -61,7 +62,7 @@ export default async function AdminDashboardPage({
     naoAtribuidas,
     aReceberMontagens,
     aPagarAgg,
-    faturamentoMesAgg,
+    valorNotasMesAgg,
     concluidasMes,
     montadoresAtivos,
     proximas,
@@ -87,7 +88,7 @@ export default async function AdminDashboardPage({
       where: { pagoAoMontador: false, status: "CONCLUIDO" },
     }),
     prisma.montagem.aggregate({
-      _sum: { valorServico: true, valorAssistencia: true },
+      _sum: { valorServico: true },
       where: concluidasNoMes,
     }),
     prisma.montagem.count({ where: concluidasNoMes }),
@@ -380,10 +381,15 @@ export default async function AdminDashboardPage({
           valor={formatarMoeda(aPagarAgg._sum.valorMontador)}
           icone="👷"
         />
+        {/* Era "Faturamento do mês", mas o número é a soma cheia das notas
+            -- o que o Financeiro chama de "Valor das notas". A receita da
+            empresa é outra conta (acerto + assistência + particulares), e o
+            nome de uma no número da outra fazia o mês parecer render bem
+            mais do que rendeu. */}
         <StatCard
-          titulo="Faturamento do mês"
-          valor={formatarMoeda(faturamentoMesAgg._sum.valorServico)}
-          sub={`${concluidasMes} concluída(s) no mês · ${montadoresAtivos} montador(es) ativo(s)`}
+          titulo="Valor das notas do mês"
+          valor={formatarMoeda(valorNotasMesAgg._sum.valorServico)}
+          sub={`Soma cheia das ${concluidasMes} concluída(s) no mês · ${montadoresAtivos} montador(es) ativo(s)`}
           cor="text-emerald-600"
           icone="📈"
         />

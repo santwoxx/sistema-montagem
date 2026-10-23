@@ -64,6 +64,27 @@ export function ehArquivoDoBlob(url: string | null | undefined): url is string {
   }
 }
 
+// Pasta das fotos de comprovante. O nome de cada arquivo começa pelo id da
+// montagem -- é o que ehFotoDaMontagem confere.
+const PASTA_FOTOS_MONTAGEM = "montagens";
+
+/** Caminho no Blob de uma foto de comprovante da montagem `montagemId`. */
+export function caminhoFotoDaMontagem(montagemId: string, extensao: string) {
+  const sufixo = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  return `${PASTA_FOTOS_MONTAGEM}/${montagemId}-${sufixo}.${extensao}`;
+}
+
+/**
+ * Se `url` é uma foto de comprovante desta montagem, subida por este sistema
+ * (ver caminhoFotoDaMontagem). A conclusão recebe só os endereços das fotos
+ * -- elas sobem antes, uma por envio --, então é isto que impede gravar como
+ * comprovante, e mandar ao CentralSync, um endereço qualquer.
+ */
+export function ehFotoDaMontagem(url: string, montagemId: string): boolean {
+  if (!montagemId || !ehArquivoDoBlob(url)) return false;
+  return new URL(url).pathname.startsWith(`/${PASTA_FOTOS_MONTAGEM}/${montagemId}-`);
+}
+
 /**
  * Apaga um arquivo do Blob, em melhor esforço.
  *

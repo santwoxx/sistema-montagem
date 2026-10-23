@@ -38,6 +38,14 @@ export const STATUS_PERMITIDOS_MONTADOR: StatusMontagemValido[] = [
   "EM_ANDAMENTO",
 ];
 
+// De onde o montador pode mexer. A lista acima diz para qual status ele pode
+// levar a montagem; esta diz em qual ela precisa estar. Concluída e
+// cancelada estão fechadas -- quem reabre é o admin, pela tela da montagem.
+// Sem esta trava, uma aba aberta antes da conclusão (ou do cancelamento)
+// ainda mostrava "Iniciar montagem", e o clique reabria o serviço, apagava a
+// data de conclusão e tirava a montagem do financeiro do mês.
+export const STATUS_EM_ABERTO: StatusMontagemValido[] = ["PENDENTE", "EM_ANDAMENTO"];
+
 // Só diz para qual tela devolver o admin depois do clique (ver
 // confirmarEnvioCentralSyncAction). Validado para que o valor não vire um
 // destino de redirecionamento arbitrário.

@@ -71,6 +71,7 @@ export default async function FinanceiroPage({
       id: true,
       clienteNome: true,
       lojaId: true,
+      status: true,
       createdAt: true,
       concluidoEm: true,
       valorServico: true,
@@ -101,8 +102,13 @@ export default async function FinanceiroPage({
   // interessa comparar -- quanto rende cada frente.
   const deLoja = montagens.filter((m) => !ehParticular(m));
   const particulares = montagens.filter((m) => ehParticular(m));
+  // Comissão só é devida pelo serviço feito: a mesma regra do painel geral e
+  // do "Pendente de receber" do financeiro do montador. Antes entrava aqui
+  // também o que ainda nem tinha sido montado, e as três telas discordavam.
   const totalPendenteMontador = somarDinheiro(
-    montagens.filter((m) => !m.pagoAoMontador).map((m) => m.valorMontador)
+    montagens
+      .filter((m) => m.status === "CONCLUIDO" && !m.pagoAoMontador)
+      .map((m) => m.valorMontador)
   );
 
   // O relatório detalhado abre com o que está filtrado aqui: o mês vira o
@@ -219,6 +225,7 @@ export default async function FinanceiroPage({
         <StatCard
           titulo="A pagar aos montadores"
           valor={formatarMoeda(totalPendenteMontador)}
+          sub="Comissão de serviços já concluídos"
           cor="text-amber-600"
           icone="⏳"
         />

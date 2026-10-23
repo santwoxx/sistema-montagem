@@ -7,10 +7,13 @@ import { requireAdmin, requireUsuario } from "@/lib/auth";
 import {
   apagarArquivo,
   apagarArquivos,
+  caminhoFotoDaMontagem,
+  ehFotoDaMontagem,
   enviarArquivo,
   extensaoDe,
   TAMANHO_MAXIMO_UPLOAD,
   TAMANHO_MAXIMO_UPLOAD_TEXTO,
+  type ResultadoUpload,
 } from "@/lib/upload";
 import { linkWhatsapp, OCORRENCIA_LABEL, paraNumeroBr } from "@/lib/format";
 import { PERCENTUAL_ACERTO_PADRAO } from "@/lib/financeiro";
@@ -25,6 +28,7 @@ import { lancadaComoParticular, lojaIdDoFormulario, nomeDaOrigem } from "@/lib/s
 import { lerTipoServico, tipoPeloPedido } from "@/lib/tipo-servico";
 import {
   OrigemEnvioSchema,
+  STATUS_EM_ABERTO,
   STATUS_PERMITIDOS_MONTADOR,
   StatusMontagemSchema,
   TipoOcorrenciaSchema,
@@ -403,6 +407,19 @@ function caminhoDetalhe(role: "ADMIN" | "MONTADOR", id: string) {
   return role === "ADMIN" ? `/admin/montagens/${id}` : `/montador/montagens/${id}`;
 }
 
+// Por que o montador não consegue mais mexer na montagem pelo aplicativo
+// (ver STATUS_EM_ABERTO). Sem status é a corrida: a tela estava aberta, e a
+// montagem foi fechada ou passada para outra pessoa antes do clique.
+function motivoMontagemFechada(status?: string) {
+  if (status === "CANCELADO") {
+    return "Esta montagem foi cancelada pelo administrador. Se o serviço ainda vai acontecer, fale com ele.";
+  }
+  if (status === "CONCLUIDO") {
+    return "Esta montagem já foi concluída. Se precisar reabrir, fale com o administrador.";
+  }
+  return "Esta montagem mudou enquanto a tela estava aberta. Recarregue a página e confira.";
+}
+
 export async function atualizarClienteMontadorAction(id: string, formData: FormData) {
   const { session } = await podeGerenciar(id);
   const caminho = caminhoDetalhe(session.role, id);
@@ -431,7 +448,7 @@ export async function atualizarClienteMontadorAction(id: string, formData: FormD
 // valor chega de fora, e o tipo do parâmetro não é garantia nenhuma em
 // tempo de execução. Quem garante é o schema abaixo.
 export async function atualizarStatusAction(id: string, novoStatusBruto: string) {
-  const { session } = await podeGerenciar(id);
+  const { session, montagem } = await podeGerenciar(id);
   const caminho = caminhoDetalhe(session.role, id);
 
   const analise = StatusMontagemSchema.safeParse(novoStatusBruto);
@@ -457,13 +474,32 @@ export async function atualizarStatusAction(id: string, novoStatusBruto: string)
     return;
   }
 
-  await prisma.montagem.update({
-    where: { id },
-    data: {
-      status: novoStatus,
-      concluidoEm: novoStatus === "CONCLUIDO" ? new Date() : null,
-    },
-  });
+  if (session.role === "MONTADOR") {
+    if (!STATUS_EM_ABERTO.includes(montagem.status)) {
+      redirect(`${caminho}?erro=${encodeURIComponent(motivoMontagemFechada(montagem.status))}`);
+    }
+
+    // A mesma condição vai no próprio UPDATE, e não só na leitura acima:
+    // entre a página abrir e o clique chegar, o admin pode ter concluído,
+    // cancelado ou passado a montagem para outra pessoa.
+    const { count } = await prisma.montagem.updateMany({
+      where: { id, montadorId: session.sub, status: { in: STATUS_EM_ABERTO } },
+      data: { status: novoStatus, concluidoEm: null },
+    });
+    if (count === 0) {
+      redirect(`${caminho}?erro=${encodeURIComponent(motivoMontagemFechada())}`);
+    }
+  } else {
+    await prisma.montagem.update({
+      where: { id },
+      data: {
+        status: novoStatus,
+        // Concluir de novo o que já estava concluído mantém a data original,
+        // como no formulário de edição (atualizarMontagemAction).
+        concluidoEm: novoStatus === "CONCLUIDO" ? (montagem.concluidoEm ?? new Date()) : null,
+      },
+    });
+  }
 
   revalidarMontagem(id);
   redirect(caminho);
@@ -613,6 +649,55 @@ async function avisarCentralSync(
   return { ok: false, motivo: ultimoMotivo };
 }
 
+// Sobe UMA foto do comprovante e devolve o endereço dela. O formulário de
+// conclusão chama isto foto por foto e só depois chama concluirComProvaAction,
+// já com os endereços.
+//
+// As fotos iam todas juntas no envio da conclusão, e o corpo de uma Server
+// Action tem teto de 4 MB (next.config.ts): cada foto passava na conferência
+// de 3 MB, mas umas seis ou sete, mesmo reduzidas, já somavam mais que isso.
+// O pedido era recusado antes de chegar aqui, e o montador lia "confira a
+// internet" -- que não era o problema. Uma por envio, o teto vale por foto.
+//
+// Se a pessoa desistir depois de subir as fotos, elas ficam no Blob sem
+// montagem, como já acontece com a foto da nota importada.
+export async function enviarFotoComprovanteAction(
+  id: string,
+  formData: FormData
+): Promise<ResultadoUpload> {
+  const session = await requireUsuario();
+
+  const montagem = await prisma.montagem.findUnique({
+    where: { id },
+    select: { montadorId: true, status: true },
+  });
+  if (!montagem) return { ok: false, erro: "Montagem não encontrada." };
+  if (session.role === "MONTADOR") {
+    if (montagem.montadorId !== session.sub) {
+      return { ok: false, erro: "Você não tem acesso a esta montagem." };
+    }
+    if (montagem.status === "CANCELADO") {
+      return { ok: false, erro: motivoMontagemFechada(montagem.status) };
+    }
+  }
+
+  const foto = formData.get("foto");
+  if (!(foto instanceof File) || foto.size === 0) {
+    return { ok: false, erro: "Escolha uma foto do produto montado." };
+  }
+  if (!foto.type.startsWith("image/")) {
+    return { ok: false, erro: "O arquivo da foto precisa ser uma imagem." };
+  }
+  if (foto.size > TAMANHO_MAXIMO_UPLOAD) {
+    return {
+      ok: false,
+      erro: `Uma foto é muito grande (máximo ${TAMANHO_MAXIMO_UPLOAD_TEXTO}). Tire outra pelo próprio celular, que o sistema reduz sozinho.`,
+    };
+  }
+
+  return enviarArquivo(caminhoFotoDaMontagem(id, extensaoDe(foto)), foto);
+}
+
 // Salva o comprovante da montagem (foto do produto montado + assinaturas) e
 // marca como concluída. Usada pelos dois painéis:
 //
@@ -635,9 +720,27 @@ export async function concluirComProvaAction(id: string, formData: FormData) {
 
   const exigirAssinaturas = session.role === "MONTADOR";
 
-  const fotosRaw = formData.getAll("fotos");
-  const fotos = fotosRaw.filter((f): f is File => f instanceof File && f.size > 0);
-  const temFotoNova = fotos.length > 0;
+  // Cancelada pelo admin não volta a existir pelo aplicativo: concluir aqui
+  // a poria no financeiro e na fila do CentralSync. O admin continua podendo
+  // anexar o comprovante -- a decisão sobre o cancelamento é dele.
+  if (session.role === "MONTADOR" && montagem.status === "CANCELADO") {
+    erro(motivoMontagemFechada(montagem.status));
+    return;
+  }
+
+  // As fotos já subiram, uma por envio (enviarFotoComprovanteAction); aqui
+  // chegam só os endereços. O que já está no comprovante sai da lista: o
+  // reenvio depois de uma falha de rede não pode duplicar foto.
+  const fotoUrls = [
+    ...new Set(
+      formData.getAll("fotoUrls").filter((valor): valor is string => typeof valor === "string")
+    ),
+  ].filter((url) => !montagem.fotosProdutoUrls.includes(url));
+  if (fotoUrls.some((url) => !ehFotoDaMontagem(url, id))) {
+    erro("Não reconheci uma das fotos enviadas. Escolha as fotos de novo e tente outra vez.");
+    return;
+  }
+  const temFotoNova = fotoUrls.length > 0;
 
   const assinaturaMontador = String(formData.get("assinaturaMontador") || "").trim();
   const assinaturaCliente = String(formData.get("assinaturaCliente") || "").trim();
@@ -646,21 +749,6 @@ export async function concluirComProvaAction(id: string, formData: FormData) {
     erro("Envie uma foto do produto montado antes de concluir.");
     return;
   }
-  if (temFotoNova) {
-    for (const foto of fotos) {
-      if (!foto.type.startsWith("image/")) {
-        erro("O arquivo da foto precisa ser uma imagem.");
-        return;
-      }
-      if (foto.size > TAMANHO_MAXIMO_UPLOAD) {
-        erro(
-          `Uma foto é muito grande (máximo ${TAMANHO_MAXIMO_UPLOAD_TEXTO}). Tire outra pelo próprio celular, que o sistema reduz sozinho.`
-        );
-        return;
-      }
-    }
-  }
-
   // Assinatura em branco só é aceita quando já existe uma salva (o admin
   // trocando só a foto, por exemplo). Nunca gravamos uma montagem concluída
   // sem prova nenhuma pelo lado do montador.
@@ -679,21 +767,6 @@ export async function concluirComProvaAction(id: string, formData: FormData) {
   if (assinaturaCliente && !assinaturaCliente.startsWith("data:image/")) {
     erro("Não consegui ler a assinatura do cliente. Assine de novo.");
     return;
-  }
-
-  const fotoUrls: string[] = [];
-  if (temFotoNova) {
-    for (const foto of fotos) {
-      const envio = await enviarArquivo(
-        `montagens/${id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.${extensaoDe(foto)}`,
-        foto
-      );
-      if (!envio.ok) {
-        erro(envio.erro);
-        return;
-      }
-      fotoUrls.push(envio.url);
-    }
   }
 
   const jaEstavaConcluida = montagem.status === "CONCLUIDO";
@@ -958,6 +1031,12 @@ export async function registrarOcorrenciaAction(
   if (session.role !== "MONTADOR" || montagem.montadorId !== session.sub) {
     return { ok: false, erro: "Você não tem acesso a esta montagem." };
   }
+  // A ocorrência devolve a montagem para PENDENTE. Numa concluída ou
+  // cancelada (aba antiga aberta), isso reabria o serviço e deixava a data
+  // de conclusão para trás.
+  if (!STATUS_EM_ABERTO.includes(montagem.status)) {
+    return { ok: false, erro: motivoMontagemFechada(montagem.status) };
+  }
 
   const tipoAnalise = TipoOcorrenciaSchema.safeParse(String(formData.get("tipo") || ""));
   if (!tipoAnalise.success) {
@@ -990,8 +1069,10 @@ export async function registrarOcorrenciaAction(
     prisma.ocorrencia.create({
       data: { montagemId: id, tipo, observacao: observacao || null, fotoUrl },
     }),
-    prisma.montagem.update({
-      where: { id },
+    // A mesma condição no UPDATE: se a montagem foi fechada enquanto a foto
+    // subia, a ocorrência fica registrada, mas o status não volta.
+    prisma.montagem.updateMany({
+      where: { id, status: { in: STATUS_EM_ABERTO } },
       data: { status: "PENDENTE" },
     }),
   ]);
@@ -1037,39 +1118,44 @@ export async function registrarOcorrenciaAction(
   return { ok: true, url: linkWhatsapp(montagem.loja.telefone, mensagem) };
 }
 
-// A inversão é feita no próprio UPDATE (`NOT "coluna"`), e não com
-// ler-depois-escrever: dois cliques quase simultâneos liam o mesmo valor e
-// gravavam o mesmo resultado, então um dos cliques simplesmente sumia. Como
-// é SQL cru, `updatedAt` (que o Prisma preenche sozinho no update normal)
-// precisa ser escrito à mão.
-export async function alternarPagamentoLojaAction(id: string) {
+// Grava o valor que o botão mostra ("Marcar como pago" grava pago), e não o
+// contrário do que está no banco. Isto era um `NOT "pagoPelaLoja"` no
+// UPDATE: resolvia dois cliques simultâneos, mas não a tela desatualizada --
+// com a página aberta desde antes de outra pessoa (ou outra aba) marcar o
+// pagamento, o botão ainda dizia "Marcar como pago" e o clique desmarcava o
+// que já estava pago. Com o valor fixado no botão (.bind), repetir o clique
+// ou clicar numa tela velha dá sempre no que o botão diz.
+//
+// `pago` chega de fora como qualquer argumento de Server Action, por isso é
+// conferido aqui em vez de confiar no tipo.
+async function marcarPagamento(
+  id: string,
+  campo: "pagoPelaLoja" | "pagoAoMontador",
+  pago: unknown
+) {
   await requireAdmin();
+  if (typeof pago !== "boolean") redirect(`/admin/montagens/${id}`);
 
-  const linhas = await prisma.$executeRaw`
-    UPDATE "Montagem"
-       SET "pagoPelaLoja" = NOT "pagoPelaLoja", "updatedAt" = NOW()
-     WHERE "id" = ${id}
-  `;
-  if (linhas === 0) redirect("/admin/montagens");
+  // updateMany pelo mesmo motivo de marcarDispensaCentralSync: montagem que
+  // não existe mais devolve count 0 em vez de estourar uma exceção.
+  const { count } = await prisma.montagem.updateMany({
+    where: { id },
+    data: campo === "pagoPelaLoja" ? { pagoPelaLoja: pago } : { pagoAoMontador: pago },
+  });
+  if (count === 0) redirect("/admin/montagens");
 
+  // Inclui o painel do montador: o valor "a receber" dele some da lista
+  // assim que a comissão é marcada como paga.
   revalidarMontagem(id);
   redirect(`/admin/montagens/${id}`);
 }
 
-export async function alternarPagamentoMontadorAction(id: string) {
-  await requireAdmin();
+export async function marcarPagamentoLojaAction(id: string, pago: boolean) {
+  await marcarPagamento(id, "pagoPelaLoja", pago);
+}
 
-  const linhas = await prisma.$executeRaw`
-    UPDATE "Montagem"
-       SET "pagoAoMontador" = NOT "pagoAoMontador", "updatedAt" = NOW()
-     WHERE "id" = ${id}
-  `;
-  if (linhas === 0) redirect("/admin/montagens");
-
-  // O pagamento afeta diretamente o que o montador vê no painel dele (o
-  // valor "a receber" some da lista assim que marcado como pago).
-  revalidarMontagem(id);
-  redirect(`/admin/montagens/${id}`);
+export async function marcarPagamentoMontadorAction(id: string, pago: boolean) {
+  await marcarPagamento(id, "pagoAoMontador", pago);
 }
 
 export async function excluirMontagemAction(id: string) {
@@ -1078,11 +1164,17 @@ export async function excluirMontagemAction(id: string) {
   // Lê os arquivos antes de apagar a linha: depois do delete não há mais
   // como saber o que ficou órfão no Blob. As ocorrências somem por cascata
   // no banco, mas as fotos delas não.
+  //
+  // A lista era só a foto principal, o manual e as fotos de ocorrência:
+  // as demais fotos do comprovante (fotosProdutoUrls) e a foto da nota
+  // ficavam no Blob, públicas, com a casa e os dados do cliente.
   const arquivos = await prisma.montagem.findUnique({
     where: { id },
     select: {
       fotoProdutoUrl: true,
+      fotosProdutoUrls: true,
       manualUrl: true,
+      notaUrl: true,
       ocorrencias: { select: { fotoUrl: true } },
     },
   });
@@ -1090,10 +1182,22 @@ export async function excluirMontagemAction(id: string) {
   await prisma.montagem.delete({ where: { id } });
 
   if (arquivos) {
+    // A foto da nota é a única que chega como campo do formulário (ela sobe
+    // na importação, antes de a montagem existir), então nada garante que só
+    // esta montagem aponte para ela: só sai se nenhuma outra a usa.
+    const notaEmUso = arquivos.notaUrl
+      ? (await prisma.montagem.count({ where: { notaUrl: arquivos.notaUrl } })) > 0
+      : false;
+
+    // Set: a foto principal também está na lista de fotos.
     await apagarArquivos([
-      arquivos.fotoProdutoUrl,
-      arquivos.manualUrl,
-      ...arquivos.ocorrencias.map((o) => o.fotoUrl),
+      ...new Set([
+        arquivos.fotoProdutoUrl,
+        ...arquivos.fotosProdutoUrls,
+        arquivos.manualUrl,
+        notaEmUso ? null : arquivos.notaUrl,
+        ...arquivos.ocorrencias.map((o) => o.fotoUrl),
+      ]),
     ]);
   }
 

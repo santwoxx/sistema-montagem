@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ipDoPedido, limparTentativas, registrarTentativa } from "@/lib/limite";
 import {
   OrigemEnvioSchema,
+  STATUS_EM_ABERTO,
   STATUS_PERMITIDOS_MONTADOR,
   StatusMontagemSchema,
   TipoOcorrenciaSchema,
@@ -74,6 +75,15 @@ describe("validação do que chega de fora", () => {
     expect(STATUS_PERMITIDOS_MONTADOR).toContain("PENDENTE");
     expect(STATUS_PERMITIDOS_MONTADOR).not.toContain("CONCLUIDO");
     expect(STATUS_PERMITIDOS_MONTADOR).not.toContain("CANCELADO");
+  });
+
+  it("só deixa o montador mexer em montagem que ainda está em aberto", () => {
+    // Concluída e cancelada estão fechadas: quem reabre é o admin. Uma aba
+    // antiga com "Iniciar montagem" não pode tirar o serviço do financeiro.
+    expect(STATUS_EM_ABERTO).toContain("PENDENTE");
+    expect(STATUS_EM_ABERTO).toContain("EM_ANDAMENTO");
+    expect(STATUS_EM_ABERTO).not.toContain("CONCLUIDO");
+    expect(STATUS_EM_ABERTO).not.toContain("CANCELADO");
   });
 
   it("aceita só os tipos de ocorrência previstos", () => {

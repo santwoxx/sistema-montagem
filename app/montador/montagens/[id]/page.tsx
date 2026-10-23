@@ -6,6 +6,7 @@ import {
   atualizarClienteMontadorAction,
   atualizarStatusAction,
   concluirComProvaAction,
+  enviarFotoComprovanteAction,
   registrarOcorrenciaAction,
 } from "@/lib/actions/montagens";
 import { gerarLinkAvaliacaoAction } from "@/lib/actions/avaliacoes";
@@ -211,6 +212,7 @@ export default async function MontagemDetalheMontadorPage({
             </p>
             <ConcluirMontagemForm
               action={concluirComProvaAction.bind(null, montagem.id)}
+              enviarFoto={enviarFotoComprovanteAction.bind(null, montagem.id)}
               exigirAssinaturas={
                 emAndamento ||
                 !montagem.assinaturaMontador ||

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ComponentProps } from "react";
 import { Button } from "@/components/ui";
 import { ConcluirMontagemForm } from "@/components/ConcluirMontagemForm";
 
@@ -16,10 +16,12 @@ import { ConcluirMontagemForm } from "@/components/ConcluirMontagemForm";
  */
 export function ComprovanteAdmin({
   action,
+  enviarFoto,
   jaTemFoto,
   concluida,
 }: {
   action: (formData: FormData) => void | Promise<void>;
+  enviarFoto: ComponentProps<typeof ConcluirMontagemForm>["enviarFoto"];
   jaTemFoto: boolean;
   concluida: boolean;
 }) {
@@ -46,6 +48,7 @@ export function ComprovanteAdmin({
       </p>
       <ConcluirMontagemForm
         action={action}
+        enviarFoto={enviarFoto}
         exigirAssinaturas={false}
         jaTemFoto={jaTemFoto}
         rotuloAssinaturaMontador="Assinatura de quem montou"

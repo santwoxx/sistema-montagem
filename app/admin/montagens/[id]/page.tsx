@@ -3,11 +3,12 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import {
   atualizarMontagemAction,
-  alternarPagamentoLojaAction,
-  alternarPagamentoMontadorAction,
+  marcarPagamentoLojaAction,
+  marcarPagamentoMontadorAction,
   excluirMontagemAction,
   confirmarEnvioCentralSyncAction,
   concluirComProvaAction,
+  enviarFotoComprovanteAction,
   reporNaFilaCentralSyncAction,
 } from "@/lib/actions/montagens";
 import {
@@ -148,7 +149,10 @@ export default async function MontagemDetalhePage({
             >
               {montagem.pagoPelaLoja ? "Pago" : "Pendente"}
             </Badge>
-            <form action={alternarPagamentoLojaAction.bind(null, montagem.id)}>
+            {/* O valor vai fixado no botão: numa tela desatualizada, o
+                clique grava o que o botão diz, em vez de inverter o que
+                já está gravado (ver marcarPagamento). */}
+            <form action={marcarPagamentoLojaAction.bind(null, montagem.id, !montagem.pagoPelaLoja)}>
               <SubmitButton variante="secundario" pendingText="Salvando…">
                 Marcar como {montagem.pagoPelaLoja ? "pendente" : "pago"}
               </SubmitButton>
@@ -174,7 +178,9 @@ export default async function MontagemDetalhePage({
             >
               {montagem.pagoAoMontador ? "Pago" : "Pendente"}
             </Badge>
-            <form action={alternarPagamentoMontadorAction.bind(null, montagem.id)}>
+            <form
+              action={marcarPagamentoMontadorAction.bind(null, montagem.id, !montagem.pagoAoMontador)}
+            >
               <SubmitButton variante="secundario" pendingText="Salvando…">
                 Marcar como {montagem.pagoAoMontador ? "pendente" : "pago"}
               </SubmitButton>
@@ -248,6 +254,7 @@ export default async function MontagemDetalhePage({
         </div>
         <ComprovanteAdmin
           action={concluirComProvaAction.bind(null, montagem.id)}
+          enviarFoto={enviarFotoComprovanteAction.bind(null, montagem.id)}
           jaTemFoto={Boolean(montagem.fotoProdutoUrl)}
           concluida={montagem.status === "CONCLUIDO"}
         />
